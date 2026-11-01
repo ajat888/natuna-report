@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Laporan Eksekutif - Natuna Cafe & Resto</title>
+<style>
+  :root{--primary:#1e293b;--secondary:#475569;--border:#e2e8f0;--bg:#f8fafc;
+        --success:#15803d;--danger:#b91c1c;--warning:#b45309;--info:#0369a1;}
+  *{box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+       margin:0;padding:16px;color:var(--primary);background:var(--bg);font-size:14px;line-height:1.6;}
+  .header{text-align:center;margin-bottom:24px;padding-bottom:16px;border-bottom:2px solid var(--primary);}
+  .header h1{font-size:20px;margin:0 0 8px;text-transform:uppercase;letter-spacing:1px;}
+  .header p{margin:0;color:var(--secondary);font-size:13px;}
+  .card-summary{background:#fff;border:1px solid var(--border);border-radius:8px;padding:16px;
+                margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,.05);}
+  .summary-row{display:flex;justify-content:space-between;padding:8px 0;
+               border-bottom:1px dashed var(--border);}
+  .summary-row:last-child{border-bottom:none;}
+  .summary-row.total{font-weight:bold;font-size:15px;padding-top:12px;}
+  .val-success{color:var(--success);} .val-danger{color:var(--danger);}
+  h2{font-size:15px;margin:24px 0 12px;padding-bottom:8px;border-bottom:1px solid var(--border);
+     text-transform:uppercase;letter-spacing:.5px;}
+  .table-responsive{width:100%;overflow-x:auto;background:#fff;border:1px solid var(--border);
+                    border-radius:8px;margin-bottom:24px;}
+  table{width:100%;border-collapse:collapse;table-layout:fixed;}
+  th,td{padding:10px 8px;font-size:13px;border-bottom:1px solid var(--border);
+        word-wrap:break-word;vertical-align:middle;}
+  th{background:#f1f5f9;font-weight:600;text-align:left;color:var(--secondary);font-size:12px;}
+  .text-right{text-align:right;white-space:nowrap;}
+  .fw-bold{font-weight:bold;}
+  .row-total{background:#f8fafc;font-weight:bold;}
+  .analysis-box{background:#fff;border:1px solid var(--border);border-radius:8px;
+                padding:16px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.02);}
+  .analysis-title{font-weight:bold;font-size:14px;margin-bottom:12px;display:flex;
+                  align-items:center;gap:8px;}
+  .analysis-list{margin:0;padding-left:20px;color:var(--secondary);}
+  .analysis-list li{margin-bottom:10px;} .analysis-list strong{color:var(--primary);}
+  .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:11px;
+         font-weight:bold;text-transform:uppercase;}
+  .badge-blue{background:#e0f2fe;color:#0369a1;}
+  .badge-orange{background:#ffedd5;color:#c2410c;}
+  .badge-green{background:#dcfce7;color:#15803d;}
+  .footer-note{font-size:11px;color:#64748b;text-align:center;margin-top:30px;}
+  .cat-row{background:#f8fafc;font-weight:bold;font-size:12px;color:var(--secondary);}
+  .warn{color:var(--warning);} .err{color:var(--danger);}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>Laporan Eksekutif Harian</h1>
+  <p>Natuna Café & Resto | Periode: {{ tanggal_panjang }}</p>
+</div>
+
+<div class="card-summary">
+  <div class="summary-row">
+    <span>Total Pendapatan (Revenue)</span>
+    <span class="fw-bold">{{ fin.revenue|rupiah }}</span>
+  </div>
+  <div class="summary-row">
+    <span>Harga Pokok Penjualan (HPP)</span>
+    <span class="fw-bold val-danger">{{ fin.hpp|rp_neg }}</span>
+  </div>
+  <div class="summary-row total">
+    <span>Laba Kotor (Gross Profit)</span>
+    <span class="val-success">{{ fin.gross_profit|rupiah }}</span>
+  </div>
+  <div class="summary-row" style="margin-top:8px;">
+    <span>Beban Operasional Harian</span>
+    <span class="fw-bold val-danger">{{ fin.expenses|rp_neg }}</span>
+  </div>
+  <div class="summary-row total" style="color:{% if fin.net_cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
+    <span>Arus Kas Bersih (Net Cash Flow)</span>
+    <span>{{ fin.net_cash_flow|rp_neg }}</span>
+  </div>
+  {% if analysis.summary_note %}
+  <div style="font-size:11px;color:var(--secondary);margin-top:12px;font-style:italic;">
+    *Catatan: {{ analysis.summary_note }}
+  </div>
+  {% endif %}
+</div>
+
+<h2>Rincian Penjualan & Laba Kotor</h2>
+<div class="table-responsive">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:40%;">Menu / Produk</th>
+        <th class="text-right" style="width:15%;">Qty</th>
+        <th class="text-right" style="width:20%;">Pendapatan</th>
+        <th class="text-right" style="width:25%;">Laba Kotor</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set cats = {} %}
+      {% for p in fin.per_menu %}
+        {% set _ = cats.setdefault(p.category, []).append(p) %}
+      {% endfor %}
+      {% for cat, items in cats.items() %}
+        <tr><td colspan="4" class="cat-row">KATEGORI: {{ cat|upper }}</td></tr>
+        {% for p in items %}
+          <tr>
+            <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
+              <small style="color:#94a3b8;">→ {{ p.matched_name }}</small>{% endif %}</td>
+            <td class="text-right">{{ p.qty }}</td>
+            <td class="text-right">{{ p.revenue|rupiah }}</td>
+            <td class="text-right {% if p.margin is none %}warn{% elif p.margin < 0 %}err{% else %}val-success{% endif %}">
+              {% if p.margin is none %}— HPP N/A{% else %}{{ p.margin|rupiah }}{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      {% endfor %}
+      <tr class="row-total">
+        <td>TOTAL</td>
+        <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
+        <td class="text-right">{{ fin.revenue|rupiah }}</td>
+        <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2>Rincian Beban Operasional</h2>
+<div class="table-responsive">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:60%;">Deskripsi Pengeluaran</th>
+        <th class="text-right" style="width:40%;">Nominal</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cat, data in fin.expense_breakdown.items() %}
+        <tr><td colspan="2" class="cat-row">{{ cat|upper }}</td></tr>
+        {% for item in data['items'] %}
+          <tr>
+            <td>{{ item.sub or '(tanpa nama)' }}</td>
+            <td class="text-right">{{ item.amount|rupiah }}</td>
+          </tr>
+        {% endfor %}
+      {% endfor %}
+      <tr class="row-total">
+        <td>TOTAL BEBAN OPERASIONAL</td>
+        <td class="text-right val-danger">{{ fin.expenses|rupiah }}</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+{% if fin.unmatched_products %}
+<div class="analysis-box" style="border-color:var(--warning);">
+  <div class="analysis-title">
+    <span class="badge badge-orange">Data Warning</span> Produk tanpa HPP
+  </div>
+  <div style="font-size:12px;color:var(--secondary);">
+    Produk berikut tidak match dengan Daftar Menu: 
+    <strong>{{ fin.unmatched_products|join(', ') }}</strong>. 
+    Laba kotor total dan margin di atas <em>tidak</em> menyertakan produk ini.
+  </div>
+</div>
+{% endif %}
+
+<h2>Analisa Kinerja & Rekomendasi Strategis</h2>
+
+<div class="analysis-box">
+  <div class="analysis-title">
+    <span class="badge badge-blue">Menu Engineering</span> Klasifikasi Performa Menu
+  </div>
+  <ul class="analysis-list">
+    {% for m in analysis.menu_engineering %}
+      <li><strong>{{ m.kategori }}:</strong> {{ m.menus|join(', ') }}. <em>{{ m.alasan }}</em>
+        {{ m.rekomendasi }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="analysis-box">
+  <div class="analysis-title">
+    <span class="badge badge-orange">Cost Control</span> Efisiensi Biaya & HPP
+  </div>
+  <ul class="analysis-list">
+    {% for c in analysis.cost_control %}
+      <li><strong>{{ c.judul }}:</strong> {{ c.detail }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="analysis-box">
+  <div class="analysis-title">
+    <span class="badge badge-green">Sales & Promotion</span> Strategi Pemasaran
+  </div>
+  <ul class="analysis-list">
+    {% for s in analysis.sales_promotion %}
+      <li><strong>{{ s.judul }}:</strong> {{ s.detail }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+<div class="footer-note">
+  Laporan ini dihasilkan otomatis oleh Sistem Informasi Manajemen Natuna Café & Resto.<br>
+  Dokumen bersifat rahasia dan hanya untuk kalangan internal manajemen.
+</div>
+
+</body>
+</html>
