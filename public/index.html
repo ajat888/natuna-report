@@ -1,12 +1,125 @@
-<form id="f">
-  <label>1. File Penjualan (HTML periodik dari POS)</label>
-  <input type="file" name="penjualan" accept=".html,.htm" required>
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generator Laporan - Natuna</title>
+<style>
+  body {
+    font-family: -apple-system, system-ui, sans-serif;
+    max-width: 720px;
+    margin: 32px auto;
+    padding: 16px;
+    background: #f8fafc;
+    color: #1e293b;
+  }
+  h1 { font-size: 20px; margin-bottom: 4px; }
+  .sub { color: #64748b; font-size: 13px; margin-bottom: 24px; }
+  
+  label { display: block; font-weight: 600; font-size: 13px; margin-top: 16px; margin-bottom: 6px; }
+  input[type=file], input[type=date] {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: #fff;
+    font-size: 14px;
+  }
+  button {
+    margin-top: 20px;
+    padding: 12px 20px;
+    background: #1e293b;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:disabled { opacity: .6; cursor: wait; }
+  button.secondary { background: #0369a1; }
+  
+  #status { margin-top: 16px; font-size: 13px; font-weight: 500; }
+  #preview {
+    margin-top: 24px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    width: 100%;
+    min-height: 600px;
+    background: #fff;
+    display: none;
+  }
+  .err { color: #b91c1c; }
+  .ok { color: #15803d; }
+</style>
+</head>
+<body>
+  <h1>Generator Laporan Eksekutif</h1>
+  <div class="sub">Upload file → pilih tanggal → generate → download HTML</div>
 
-  <label>2. File Pengeluaran (Excel Pengelola Keuangan)</label>
-  <input type="file" name="pengeluaran" accept=".xlsx,.xls" required>
+  <form id="f">
+    <label>1. File Penjualan (HTML periodik dari POS)</label>
+    <input type="file" name="penjualan" accept=".html,.htm" required>
 
-  <label>3. Tanggal Laporan</label>
-  <input type="date" name="tanggal" required>
+    <label>2. File Pengeluaran (Excel Pengelola Keuangan)</label>
+    <input type="file" name="pengeluaran" accept=".xlsx,.xls" required>
 
-  <button type="submit" id="btn">Generate Laporan</button>
-</form>
+    <label>3. Tanggal Laporan</label>
+    <input type="date" name="tanggal" required>
+
+    <button type="submit" id="btn">Generate Laporan</button>
+  </form>
+
+  <div id="status"></div>
+  <iframe id="preview"></iframe>
+  
+  <div id="actions" style="display:none;">
+    <button class="secondary" id="dl" style="margin-top:12px;">⬇ Download HTML</button>
+  </div>
+
+<script>
+let lastHtml = '';
+const f = document.getElementById('f');
+const btn = document.getElementById('btn');
+const statusEl = document.getElementById('status');
+const preview = document.getElementById('preview');
+const actions = document.getElementById('actions');
+
+f.onsubmit = async (e) => {
+  e.preventDefault();
+  btn.disabled = true;
+  btn.textContent = 'Memproses (10-30 detik)...';
+  statusEl.innerHTML = '<span class="ok">Mengirim file & generate analisa AI...</span>';
+  preview.style.display = 'none';
+  actions.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/generate', { method: 'POST', body: new FormData(f) });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+
+    lastHtml = d.html;
+    preview.srcdoc = lastHtml;
+    preview.style.display = 'block';
+    actions.style.display = 'block';
+    statusEl.innerHTML = '<span class="ok">✓ Laporan berhasil dibuat.</span>';
+  } catch (err) {
+    statusEl.innerHTML = `<span class="err">✗ ${err.message}</span>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Generate Laporan';
+  }
+};
+
+document.getElementById('dl').onclick = () => {
+  const url = URL.createObjectURL(new Blob([lastHtml], { type: 'text/html' }));
+  const a = Object.assign(document.createElement('a'), {
+    href: url, 
+    download: `laporan-natuna-${new Date().toISOString().slice(0,10)}.html`,
+  });
+  a.click();
+  URL.revokeObjectURL(url);
+};
+</script>
+</body>
+</html>
