@@ -34,9 +34,9 @@
   h2 { font-size: 15px; color: var(--primary); margin: 24px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.5px; }
 
   .table-responsive { width: 100%; overflow-x: auto; background: #fff; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-  th, td { padding: 10px 8px; font-size: 13px; border-bottom: 1px solid var(--border); word-wrap: break-word; vertical-align: middle; }
-  th { background: #f1f5f9; font-weight: 600; text-align: left; color: var(--secondary); font-size: 12px; }
+  table { width: 100%; border-collapse: collapse; table-layout: auto; }
+th, td { padding: 10px 8px; font-size: 13px; border-bottom: 1px solid var(--border); word-wrap: break-word; vertical-align: middle; }
+th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
   .text-right { text-align: right; white-space: nowrap; }
   .fw-bold { font-weight: bold; }
   .row-total { background: #f8fafc; font-weight: bold; }
@@ -120,11 +120,11 @@
         {% endfor %}
       {% endfor %}
       <tr class="row-total">
-        <td>TOTAL KESELURUHAN</td>
-        <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
-        <td class="text-right">{{ fin.revenue|rupiah }}</td>
-        <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
-      </tr>
+  <td>TOTAL KESELURUHAN</td>
+  <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
+  <td class="text-right">{{ fin.revenue|rupiah }}</td>
+  <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
+</tr>
     </tbody>
   </table>
 </div>
