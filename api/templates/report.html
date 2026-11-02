@@ -194,9 +194,9 @@
   <div class="bep-block">
     <div class="bep-info">
       <span>Pendapatan: <strong>{{ fin.revenue|rupiah }}</strong></span>
-      <span>Titik Impas: <strong>{{ bep_info.bep|rupiah }}</strong></span>
+      <span>Batas Uang Keluar (Titik Impas Kas): <strong>{{ bep_info.bep|rupiah }}</strong></span>
       <span class="{% if bep_info.gap < 0 %}under{% else %}over{% endif %}">
-        {% if bep_info.gap < 0 %}Di bawah Titik Impas{% else %}Di atas Titik Impas{% endif %}:
+        {% if bep_info.gap < 0 %}Di bawah Batas{% else %}Di atas Batas{% endif %}:
         {{ bep_info.gap|rupiah }} ({{ bep_info.gap_pct }}%)
       </span>
     </div>

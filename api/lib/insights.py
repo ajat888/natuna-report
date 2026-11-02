@@ -128,44 +128,26 @@ def build_historical_context(tanggal_iso, days=7):
     return "\n".join(lines), meta
 
 
-def compute_bep(fin, avg_overhead):
+def compute_bep(fin, hist_meta):
+    """Menghitung Titik Impas Kas: Berapa pendapatan minimal untuk menutupi semua uang yang keluar hari ini."""
     rev = fin['revenue']
-    overhead_aktual = float(fin.get('overhead_expenses') or 0)
+    total_expenses = float(fin.get('expenses') or 0)
+    hpp_ratio = (fin['hpp'] / rev) if rev > 0 else 0
 
-    if rev <= 0:
-        return {
-            'bep': 0, 'hpp_ratio': 0.0, 'fixed_cost': int(overhead_aktual),
-            'gap': -int(overhead_aktual), 'gap_pct': 0.0,
-            'fixed_cost_source': 'aktual',
-        }
-
-    hpp_ratio = fin['hpp'] / rev
-
-    if overhead_aktual > 0:
-        fixed_cost = overhead_aktual
-        source = 'aktual'
-    elif avg_overhead and avg_overhead > 0:
-        fixed_cost = avg_overhead
-        source = 'historis'
-    else:
-        fixed_cost = 0
-        source = 'nol'
-
-    if hpp_ratio >= 0.99 or fixed_cost <= 0:
-        bep = 0
-    else:
-        bep = fixed_cost / (1 - hpp_ratio)
-
+    # Untuk bisnis retail/resto, BEP Kas paling mudah dipahami sebagai Total Pengeluaran.
+    # Jika Pengeluaran 4.6Jt, maka BEP Kas adalah 4.6Jt.
+    bep = total_expenses
+    
     gap = rev - bep
     gap_pct = (gap / bep * 100) if bep > 0 else 0.0
 
     return {
         'bep': int(round(bep)),
         'hpp_ratio': round(hpp_ratio, 4),
-        'fixed_cost': int(round(fixed_cost)),
+        'fixed_cost': int(total_expenses), 
         'gap': int(round(gap)),
         'gap_pct': round(gap_pct, 1),
-        'fixed_cost_source': source,
+        'fixed_cost_source': 'kas',
     }
 
 

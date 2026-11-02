@@ -24,7 +24,7 @@ SYSTEM_PROMPT = (
     "cash flow=arus kas, overhead=beban non-bahan, stock=stok. "
     "Nama produk/menu (misalnya 'Steak Original', 'Milo Latte') dan singkatan teknis seperti HPP boleh dipertahankan. "
     "ATURAN ANALISIS: "
-    "(1) Ringkasan pembuka WAJIB menyebut angka Titik Impas dan selisih dalam 1 kalimat tajam. "
+    "(1) Ringkasan pembuka WAJIB menyebut angka Titik Impas Kas dan selisih dalam 1 kalimat tajam. "
     "(2) Diagnosis WAJIB mengikuti aturan konsistensi status di bawah — tidak boleh bertentangan dengan status situasi. "
     "(3) Instruksi harus spesifik dengan angka dan realistis untuk besok. "
     "(4) Manfaatkan pola historis dan konteks pembelajaran jika tersedia — jangan mengarang, jangan mengulang template. "
@@ -33,9 +33,9 @@ SYSTEM_PROMPT = (
     "(7) FOKUS UTAMA: 'Bersih' berarti Kas Bersih (Pendapatan dikurangi Total Pengeluaran). Jangan memusingkan pemilik dengan istilah rumit. "
     "ATURAN KONSISTENSI STATUS-DIAGNOSIS (WAJIB): "
     "Situasi menentukan nada diagnosis — tidak boleh bertentangan. "
-    "- Jika situasi = Sehat: Diagnosis HARUS DIAWALI dengan 'Operasional hari ini sehat' atau sejenisnya, menyebut laba operasional positif. "
+    "- Jika situasi = Sehat: Diagnosis HARUS DIAWALI dengan 'Operasional hari ini sehat' atau sejenisnya, menyebut kas bersih positif. "
     "  DILARANG memakai kata 'akar masalah', 'masalah utama', 'masalah utama adalah', atau menyebut restoran dalam kondisi bermasalah. "
-    "  Jika ada catatan seperti HPP sedikit tinggi, pendapatan di bawah rata-rata, atau kas tipis, sebut sebagai 'catatan pengembangan' atau 'peluang optimasi', BUKAN masalah. "
+    "  Jika ada catatan seperti HPP sedikit tinggi atau kas tipis, sebut sebagai 'catatan pengembangan' atau 'peluang optimasi', BUKAN masalah. "
     "- Jika situasi = Belanja Stok Berlebih: Diagnosis fokus pada belanja stok yang menumpuk menyebabkan kas negatif meski operasional untung. "
     "- Jika situasi = Kunjungan Rendah: Diagnosis fokus pendapatan jauh di bawah titik impas. "
     "- Jika situasi = HPP Terlalu Tinggi: Diagnosis fokus HPP melebihi batas sehat atau naik dari biasanya. "
@@ -99,7 +99,6 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
         exp_lines.append(f"- {cat} ({_fmt(data['total'])}): {items_str}")
 
     status_cash = "NEGATIF" if fin['cash_flow'] < 0 else "POSITIF"
-
     hpp_ratio_pct = bep_info['hpp_ratio'] * 100
     attach_rate_pct = fin.get('attach_rate', 0) * 100
 
@@ -118,8 +117,8 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
 Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
 
 RINGKASAN KEUANGAN HARI INI
-- Total Pendapatan: {_fmt(fin['revenue'])}
-- Total Pengeluaran: {_fmt(fin['expenses'])}
+- Total Pendapatan (Uang Masuk): {_fmt(fin['revenue'])}
+- Total Pengeluaran (Uang Keluar): {_fmt(fin['expenses'])}
 - KAS BERSIH: {_fmt(fin['cash_flow'])} ({status_cash})
 - Rasio minuman per makanan: {attach_rate_pct:.1f}%
 
@@ -127,12 +126,11 @@ CATATAN AKUNTANSI (Gunakan sebagai wawasan, JANGAN sebut sebagai "Kas Bersih"):
 - HPP (bahan yang terjual): {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari pendapatan)
 - Laba Kotor: {_fmt(fin['gross_profit'])}
 - Beban Non-Bahan: {_fmt(fin['overhead_expenses'])}
-- Laba Operasional (pendapatan - HPP - beban): {_fmt(fin['operating_profit'])}
-- Belanja Stok Bahan (uang keluar untuk beli bahan): {_fmt(fin['bahan_purchases'])}
+- Laba Operasional: {_fmt(fin['operating_profit'])}
+- Belanja Stok Bahan: {_fmt(fin['bahan_purchases'])}
 
-TITIK IMPAS
-- Titik impas pendapatan hari ini: {_fmt(bep_info['bep'])} (dihitung dari beban non-bahan hari ini)
-- Beban non-bahan yang dipakai: {_fmt(bep_info['fixed_cost'])}
+TITIK IMPAS KAS
+- Batas Uang Keluar (Titik Impas Kas) hari ini: {_fmt(bep_info['bep'])}
 - Selisih pendapatan terhadap titik impas: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
 
 SITUASI (dari mesin aturan — WAJIB IKUTI):
@@ -165,7 +163,7 @@ TUGAS:
 Hasilkan JSON PERSIS dengan struktur ini (semua nilai teks Bahasa Indonesia murni, tanpa kata Inggris):
 {{
   "kondisi": "Rugi" atau "Untung",
-  "headline": "1 kalimat tajam menyebut Titik Impas, selisih, dan 1 arahan utama — konsisten dengan situasi",
+  "headline": "1 kalimat tajam menyebut Titik Impas Kas, selisih, dan 1 arahan utama — konsisten dengan situasi",
   "diagnosis": "2-3 kalimat. WAJIB mengikuti aturan konsistensi status: jika Sehat, awali 'Operasional hari ini sehat'; jika situasi lain, sebut SATU akar masalah sesuai situasi.",
   "instruksi": [
     {{"aksi": "Tindakan taktis spesifik dengan angka", "alasan": "Kenapa ini menyelesaikan akar masalah"}},
@@ -234,7 +232,7 @@ ATURAN TAMBAHAN:
         data['headline'] = (
             f"Pendapatan hari ini {_fmt(fin['revenue'])} "
             f"{'di bawah' if bep_info['gap'] < 0 else 'di atas'} "
-            f"Titik Impas {_fmt(bep_info['bep'])} "
+            f"Titik Impas Kas {_fmt(bep_info['bep'])} "
             f"(selisih {_fmt(bep_info['gap'])})."
         )
 
