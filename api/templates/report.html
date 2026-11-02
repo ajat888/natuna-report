@@ -35,8 +35,8 @@
 
   .table-responsive { width: 100%; overflow-x: auto; background: #fff; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 24px; }
   table { width: 100%; border-collapse: collapse; table-layout: auto; }
-th, td { padding: 10px 8px; font-size: 13px; border-bottom: 1px solid var(--border); word-wrap: break-word; vertical-align: middle; }
-th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
+  th, td { padding: 10px 8px; font-size: 13px; border-bottom: 1px solid var(--border); word-wrap: break-word; vertical-align: middle; }
+  th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
   .text-right { text-align: right; white-space: nowrap; }
   .fw-bold { font-weight: bold; }
   .row-total { background: #f8fafc; font-weight: bold; }
@@ -55,6 +55,7 @@ th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
   .badge-orange { background: #ffedd5; color: #c2410c; }
   .badge-green { background: #dcfce7; color: #15803d; }
   .badge-red { background: #fee2e2; color: #b91c1c; }
+  .badge-gray { background: #f1f5f9; color: #475569; }
 
   .footer-note { font-size: 11px; color: #64748b; text-align: center; margin-top: 30px; }
 </style>
@@ -120,11 +121,11 @@ th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
         {% endfor %}
       {% endfor %}
       <tr class="row-total">
-  <td>TOTAL KESELURUHAN</td>
-  <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
-  <td class="text-right">{{ fin.revenue|rupiah }}</td>
-  <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
-</tr>
+        <td>TOTAL KESELURUHAN</td>
+        <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
+        <td class="text-right">{{ fin.revenue|rupiah }}</td>
+        <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
+      </tr>
     </tbody>
   </table>
 </div>
@@ -168,6 +169,49 @@ th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
   </div>
 </div>
 {% endif %}
+
+<h2>Klasifikasi Menu (Menu Engineering)</h2>
+<div class="table-responsive">
+  <table>
+    <thead>
+      <tr>
+        <th style="width:25%;">Kategori</th>
+        <th>Daftar Menu (Qty | Laba Kotor)</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for cat, items in classification.items() %}
+        {% if items %}
+        <tr>
+          <td style="vertical-align: top;">
+            {% if cat == 'Primadona' %}
+              <span class="badge badge-green">⭐ Primadona</span>
+            {% elif cat == 'Volume Tinggi' %}
+              <span class="badge badge-blue">🐴 Volume Tinggi</span>
+            {% elif cat == 'Potensial' %}
+              <span class="badge badge-orange">🧩 Potensial</span>
+            {% elif cat == 'Evaluasi' %}
+              <span class="badge badge-gray">🗑️ Evaluasi</span>
+            {% elif cat == 'Rugi' %}
+              <span class="badge badge-red">🩸 Rugi</span>
+            {% endif %}
+          </td>
+          <td>
+            {% for item in items %}
+              <div style="margin-bottom: 6px;">
+                <strong>{{ item.product }}</strong> 
+                <span style="color: var(--secondary); font-size: 12px;">
+                  (Qty: {{ item.qty }} | Laba: {{ item.margin|rupiah }})
+                </span>
+              </div>
+            {% endfor %}
+          </td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
 
 <h2>Analisa Kinerja & Rekomendasi Strategis</h2>
 
