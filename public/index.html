@@ -7,7 +7,7 @@
 <style>
   body {
     font-family: -apple-system, system-ui, sans-serif;
-    max-width: 720px;
+    max-width: 960px;
     margin: 32px auto;
     padding: 16px;
     background: #f8fafc;
@@ -15,70 +15,129 @@
   }
   h1 { font-size: 20px; margin-bottom: 4px; }
   .sub { color: #64748b; font-size: 13px; margin-bottom: 24px; }
-  
+
+  .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #e2e8f0; }
+  .tabs button {
+    margin: 0; padding: 10px 16px; background: transparent;
+    border: none; border-bottom: 2px solid transparent;
+    font-weight: 600; font-size: 14px; color: #64748b;
+    cursor: pointer; border-radius: 0;
+  }
+  .tabs button.active { color: #1e293b; border-bottom-color: #1e293b; }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
   label { display: block; font-weight: 600; font-size: 13px; margin-top: 16px; margin-bottom: 6px; }
   input[type=file], input[type=date] {
-    width: 100%;
-    padding: 10px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    background: #fff;
-    font-size: 14px;
+    width: 100%; padding: 10px; border: 1px solid #cbd5e1;
+    border-radius: 6px; background: #fff; font-size: 14px; box-sizing: border-box;
   }
-  button {
-    margin-top: 20px;
-    padding: 12px 20px;
-    background: #1e293b;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
+  button.primary {
+    margin-top: 20px; padding: 12px 20px; background: #1e293b; color: #fff;
+    border: none; border-radius: 6px; font-size: 14px;
+    font-weight: 600; cursor: pointer;
   }
-  button:disabled { opacity: .6; cursor: wait; }
-  button.secondary { background: #0369a1; }
-  
+  button.primary:disabled { opacity: .6; cursor: wait; }
+  button.secondary {
+    background: #0369a1; color: #fff; border: none;
+    padding: 10px 16px; border-radius: 6px; font-weight: 600; cursor: pointer;
+  }
+
   #status { margin-top: 16px; font-size: 13px; font-weight: 500; }
   #preview {
-    margin-top: 24px;
-    border: 1px solid #cbd5e1;
-    border-radius: 6px;
-    width: 100%;
-    min-height: 600px;
-    background: #fff;
-    display: none;
+    margin-top: 24px; border: 1px solid #cbd5e1; border-radius: 6px;
+    width: 100%; min-height: 600px; background: #fff; display: none;
   }
   .err { color: #b91c1c; }
-  .ok { color: #15803d; }
+  .ok  { color: #15803d; }
+
+  #history-table {
+    width: 100%; border-collapse: collapse; background: #fff;
+    border: 1px solid #e2e8f0; border-radius: 6px; overflow: hidden; font-size: 14px;
+  }
+  #history-table th {
+    text-align: left; padding: 10px 12px; background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0; font-size: 12px;
+    text-transform: uppercase; letter-spacing: 0.5px; color: #64748b;
+  }
+  #history-table td { padding: 12px; border-bottom: 1px solid #f1f5f9; }
+  #history-table tbody tr { cursor: pointer; transition: background 0.15s; }
+  #history-table tbody tr:hover { background: #f0f9ff; }
+  #history-table tbody tr:last-child td { border-bottom: none; }
+  #history-table .text-right { text-align: right; }
+  #history-table .net-pos { color: #15803d; font-weight: 600; }
+  #history-table .net-neg { color: #b91c1c; font-weight: 600; }
+  .empty-state {
+    padding: 32px; text-align: center; color: #94a3b8;
+    background: #fff; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 14px;
+  }
 </style>
 </head>
 <body>
-  <h1>Generator Laporan Eksekutif</h1>
-  <div class="sub">Upload file → pilih tanggal → generate → download HTML</div>
+  <h1>Laporan Eksekutif Natuna</h1>
+  <div class="sub">Generate laporan harian atau lihat riwayat tersimpan.</div>
 
-  <form id="f">
-    <label>1. File Penjualan (HTML periodik dari POS)</label>
-    <input type="file" name="penjualan" accept=".html,.htm" required>
+  <div class="tabs">
+    <button data-tab="generate" class="active">Generate Baru</button>
+    <button data-tab="history">Riwayat Laporan</button>
+  </div>
 
-    <label>2. File Pengeluaran (Excel Pengelola Keuangan)</label>
-    <input type="file" name="pengeluaran" accept=".xlsx,.xls" required>
+  <div id="tab-generate" class="tab-panel active">
+    <form id="f">
+      <label>1. File Penjualan (HTML periodik dari POS)</label>
+      <input type="file" name="penjualan" accept=".html,.htm" required>
 
-    <label>3. Tanggal Laporan</label>
-    <input type="date" name="tanggal" required>
+      <label>2. File Pengeluaran (Excel Pengelola Keuangan)</label>
+      <input type="file" name="pengeluaran" accept=".xlsx,.xls" required>
 
-    <button type="submit" id="btn">Generate Laporan</button>
-  </form>
+      <label>3. Tanggal Laporan</label>
+      <input type="date" name="tanggal" required>
 
-  <div id="status"></div>
-  <iframe id="preview"></iframe>
-  
-  <div id="actions" style="display:none;">
-    <button class="secondary" id="dl" style="margin-top:12px;">⬇ Download HTML</button>
+      <button type="submit" class="primary" id="btn">Generate Laporan</button>
+    </form>
+
+    <div id="status"></div>
+    <iframe id="preview"></iframe>
+
+    <div id="actions" style="display:none;">
+      <button class="secondary" id="dl" style="margin-top:12px;">⬇ Download HTML</button>
+    </div>
+  </div>
+
+  <div id="tab-history" class="tab-panel">
+    <div id="history-loading" style="color:#64748b; font-size:14px;">Memuat riwayat...</div>
+    <div id="history-empty" class="empty-state" style="display:none;">
+      Belum ada laporan tersimpan.
+    </div>
+    <table id="history-table" style="display:none;">
+      <thead>
+        <tr>
+          <th>Tanggal</th>
+          <th class="text-right">Revenue</th>
+          <th class="text-right">Expenses</th>
+          <th class="text-right">Net Cash Flow</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
   </div>
 
 <script>
 let lastHtml = '';
+let lastTanggal = '';
+let historyLoaded = false;
+
+document.querySelectorAll('.tabs button').forEach(btn => {
+  btn.onclick = () => {
+    document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    if (btn.dataset.tab === 'history') loadHistory();
+  };
+});
+
 const f = document.getElementById('f');
 const btn = document.getElementById('btn');
 const statusEl = document.getElementById('status');
@@ -93,16 +152,25 @@ f.onsubmit = async (e) => {
   preview.style.display = 'none';
   actions.style.display = 'none';
 
+  const tanggal = f.querySelector('input[name="tanggal"]').value;
+
   try {
     const r = await fetch('/api/generate', { method: 'POST', body: new FormData(f) });
     const d = await r.json();
     if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
 
     lastHtml = d.html;
+    lastTanggal = tanggal;
     preview.srcdoc = lastHtml;
     preview.style.display = 'block';
     actions.style.display = 'block';
-    statusEl.innerHTML = '<span class="ok">✓ Laporan berhasil dibuat.</span>';
+
+    if (d.warning) {
+      statusEl.innerHTML = `<span class="err">⚠ ${d.warning}</span>`;
+    } else {
+      statusEl.innerHTML = '<span class="ok">✓ Laporan berhasil dibuat & tersimpan.</span>';
+    }
+    historyLoaded = false;
   } catch (err) {
     statusEl.innerHTML = `<span class="err">✗ ${err.message}</span>`;
   } finally {
@@ -112,27 +180,98 @@ f.onsubmit = async (e) => {
 };
 
 document.getElementById('dl').onclick = () => {
-  // 1. Ambil tanggal dari form (format YYYY-MM-DD)
-  const dateInput = document.querySelector('input[name="tanggal"]').value;
-  
-  // 2. Format tanggal menjadi teks Indonesia (contoh: 1 November 2026)
-  // Ditambahkan 'T00:00:00' agar tidak terjadi pergeseran hari karena zona waktu (UTC vs WIB)
-  const dateObj = new Date(dateInput + 'T00:00:00');
-  const options = { day: 'numeric', month: 'long', year: 'numeric' };
-  const formattedDate = dateObj.toLocaleDateString('id-ID', options);
-
-  // 3. Buat nama file sesuai permintaan
+  const formattedDate = formatTanggal(lastTanggal);
   const fileName = `Laporan Keuangan NATUNA Café & Resto ${formattedDate}.html`;
-
-  // 4. Proses Download
   const url = URL.createObjectURL(new Blob([lastHtml], { type: 'text/html' }));
-  const a = Object.assign(document.createElement('a'), {
-    href: url, 
-    download: fileName, // Nama file diambil dari variabel di atas
-  });
+  const a = Object.assign(document.createElement('a'), { href: url, download: fileName });
   a.click();
   URL.revokeObjectURL(url);
 };
+
+async function loadHistory() {
+  if (historyLoaded) return;
+  const loading = document.getElementById('history-loading');
+  const empty = document.getElementById('history-empty');
+  const table = document.getElementById('history-table');
+
+  loading.style.display = 'block';
+  empty.style.display = 'none';
+  table.style.display = 'none';
+
+  try {
+    const r = await fetch('/api/reports');
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+
+    loading.style.display = 'none';
+
+    if (!d.reports || d.reports.length === 0) {
+      empty.style.display = 'block';
+      historyLoaded = true;
+      return;
+    }
+
+    const tbody = table.querySelector('tbody');
+    tbody.innerHTML = '';
+    for (const rep of d.reports) {
+      const tr = document.createElement('tr');
+      const netClass = rep.net_cash_flow < 0 ? 'net-neg' : 'net-pos';
+      const netText = rep.net_cash_flow < 0
+        ? '(' + formatRp(Math.abs(rep.net_cash_flow)) + ')'
+        : formatRp(rep.net_cash_flow);
+      tr.innerHTML = `
+        <td><strong>${formatTanggal(rep.tanggal)}</strong></td>
+        <td class="text-right">${formatRp(rep.revenue)}</td>
+        <td class="text-right">${formatRp(rep.expenses)}</td>
+        <td class="text-right ${netClass}">${netText}</td>
+        <td class="text-right" style="color:#0369a1;">Lihat →</td>
+      `;
+      tr.onclick = () => openHistoryReport(rep.tanggal);
+      tbody.appendChild(tr);
+    }
+    table.style.display = 'table';
+    historyLoaded = true;
+  } catch (err) {
+    loading.innerHTML = `<span class="err">Gagal memuat riwayat: ${err.message}</span>`;
+  }
+}
+
+async function openHistoryReport(tanggal) {
+  document.querySelectorAll('.tabs button').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelector('[data-tab="generate"]').classList.add('active');
+  document.getElementById('tab-generate').classList.add('active');
+
+  statusEl.innerHTML = '<span style="color:#64748b;">Memuat laporan...</span>';
+  preview.style.display = 'none';
+  actions.style.display = 'none';
+
+  try {
+    const r = await fetch(`/api/reports/${tanggal}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
+
+    lastHtml = d.html;
+    lastTanggal = tanggal;
+    preview.srcdoc = lastHtml;
+    preview.style.display = 'block';
+    actions.style.display = 'block';
+    statusEl.innerHTML = `<span class="ok">✓ Menampilkan laporan ${formatTanggal(tanggal)}</span>`;
+  } catch (err) {
+    statusEl.innerHTML = `<span class="err">✗ ${err.message}</span>`;
+  }
+}
+
+function formatTanggal(iso) {
+  if (!iso) return '-';
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString('id-ID', {
+    day: 'numeric', month: 'long', year: 'numeric'
+  });
+}
+function formatRp(n) {
+  return 'Rp ' + Math.abs(n).toLocaleString('id-ID');
+}
 </script>
 </body>
 </html>

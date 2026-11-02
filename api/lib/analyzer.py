@@ -20,13 +20,6 @@ def _fmt(n):
 
 
 def _build_historical_context(tanggal_iso, days=7):
-    """
-    Ambil ringkasan `days` hari sebelum tanggal_iso (tidak termasuk hari-H).
-    Return string kosong bila data tidak ada / DB tidak tersedia / error apapun.
-
-    Defensive by design: kalau Supabase belum dikonfigurasi (laporan pertama),
-    fungsi ini tidak boleh menggagalkan proses analisa.
-    """
     try:
         tgl = datetime.strptime(tanggal_iso, "%Y-%m-%d").date()
         from_date = (tgl - timedelta(days=days)).isoformat()
@@ -44,7 +37,6 @@ def _build_historical_context(tanggal_iso, days=7):
 
     lines = [f"KONTEKS HISTORIS ({days} hari sebelum {tanggal_iso}):"]
 
-    # --- 1. Ringkasan harian ---
     lines.append("Ringkasan harian:")
     revenues, nets = [], []
     for r in reports:
@@ -63,7 +55,6 @@ def _build_historical_context(tanggal_iso, days=7):
         lines.append(f"Rata-rata Revenue: {_fmt(avg_rev)}")
         lines.append(f"Rata-rata Net Cash Flow: {_fmt(avg_net)}")
 
-    # --- 2. Top 5 menu (agregat periode) ---
     try:
         top_menus = db.get_menus_aggregate(from_date, to_date, group_by='matched_name')[:5]
         if top_menus:
@@ -78,7 +69,6 @@ def _build_historical_context(tanggal_iso, days=7):
     except Exception:
         pass
 
-    # --- 3. Median pengeluaran per kategori (referensi anomali) ---
     try:
         medians = db.get_expenses_median_by_category(from_date, to_date)
         if medians:
@@ -95,7 +85,6 @@ def _build_historical_context(tanggal_iso, days=7):
 def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso=None):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-    # ---- Ringkas per menu ----
     menu_lines = []
     for p in sorted(
         [x for x in fin['per_menu'] if x['margin'] is not None],
@@ -106,7 +95,6 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso=None):
             f"laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
         )
 
-    # ---- Klasifikasi ----
     cls_lines = []
     for cat, items in classification.items():
         if not items:
@@ -117,7 +105,6 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso=None):
         )
         cls_lines.append(f"- {cat}: {names}")
 
-    # ---- Rincian pengeluaran ----
     expenses = fin['expense_breakdown']
     exp_lines = []
     for cat, data in expenses.items():
@@ -128,7 +115,6 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso=None):
 
     status_net = "RUGI" if fin['net_cash_flow'] < 0 else "UNTUNG"
 
-    # ---- Konteks historis (opsional) ----
     hist_text = _build_historical_context(tanggal_iso) if tanggal_iso else ""
     if not hist_text:
         hist_text = "(belum ada data historis — ini laporan pertama atau data historis belum tersedia)"
@@ -157,19 +143,19 @@ RINCIAN PENGELUARAN:
 Tugas: Hasilkan JSON PERSIS dengan struktur ini:
 {{
   "kondisi": "Rugi" atau "Untung",
-  "diagnosis": "1-2 kalimat diagnosis tajam gaya Manajer. Sebutkan angka defisit/surplus. Jika ada data historis, WAJIB bandingkan dengan tren rata-rata dan sebutkan arah pergerakannya (misal: 'Net hari ini X, lebih baik/buruk Y% dari rata-rata 7 hari terakhir').",
+  "diagnosis": "1-2 kalimat diagnosis tajam gaya Manajer. Sebutkan angka defisit/surplus. Jika ada data historis, WAJIB bandingkan dengan tren rata-rata dan sebutkan arah pergerakannya.",
   "instruksi": [
-    {{"aksi": "Instruksi taktis spesifik (misal: Stop belanja bahan X, Genjot menu Y, Evaluasi porsi Z)", "alasan": "Penjelasan singkat kenapa aksi ini dilakukan"}},
+    {{"aksi": "Instruksi taktis spesifik", "alasan": "Penjelasan singkat kenapa aksi ini dilakukan"}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}}
   ],
-  "strategi": "1 paragraf penjelasan gaya Konsultan Bisnis. Jika ada data historis, kaitkan dengan pola berulang (misal: pengeluaran kategori X konsisten di atas median, menu Y selalu jadi primadona, atau tren revenue yang menurun 3 hari berturut-turut)."
+  "strategi": "1 paragraf penjelasan gaya Konsultan Bisnis. Jika ada data historis, kaitkan dengan pola berulang."
 }}
 
 Aturan Penting:
-- Jika kondisi "Rugi", instruksi dan strategi fokus pada PENYELAMATAN KAS (menahan belanja, genjot menu margin tinggi).
-- Jika kondisi "Untung", instruksi dan strategi fokus pada PENGEMBANGAN (amankan stok laris, sisihkan dana darurat, apresiasi tim).
-- Jika ada data historis: bandingkan hari ini dengan rata-rata; identifikasi anomali pengeluaran (nominal jauh di atas median historis).
+- Jika kondisi "Rugi", instruksi dan strategi fokus pada PENYELAMATAN KAS.
+- Jika kondisi "Untung", instruksi dan strategi fokus pada PENGEMBANGAN.
+- Jika ada data historis: bandingkan hari ini dengan rata-rata; identifikasi anomali pengeluaran.
 - Berikan 3 sampai 4 poin instruksi yang realistis untuk besok.
 - Jangan mengarang nama menu jika tidak ada di data.
 """

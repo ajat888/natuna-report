@@ -33,6 +33,60 @@ def ping():
     })
 
 
+@app.route("/api/reports", methods=["GET"])
+def list_reports():
+    if not os.environ.get("DATABASE_URL"):
+        return jsonify({"reports": [], "note": "DATABASE_URL belum dikonfigurasi"})
+    try:
+        limit = min(max(int(request.args.get("limit", 90)), 1), 365)
+        rows = db.list_reports_summary(limit=limit)
+        reports = [
+            {
+                "tanggal":       r["tanggal"].isoformat(),
+                "revenue":       int(r["revenue"]),
+                "expenses":      int(r["expenses"]),
+                "net_cash_flow": int(r["net_cash_flow"]),
+                "status":        r["status"],
+            }
+            for r in rows
+        ]
+        return jsonify({"reports": reports})
+    except db.DbError as e:
+        return jsonify({"error": f"DB error: {e}"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/<tanggal>", methods=["GET"])
+def get_report(tanggal):
+    try:
+        datetime.strptime(tanggal, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Format tanggal harus YYYY-MM-DD"}), 400
+
+    if not os.environ.get("DATABASE_URL"):
+        return jsonify({"error": "DATABASE_URL belum dikonfigurasi"}), 503
+
+    try:
+        r = db.get_report_by_date(tanggal)
+        if not r:
+            return jsonify({"error": "Laporan tidak ditemukan"}), 404
+        html = r.get("html_content")
+        if not html:
+            return jsonify({"error": "Laporan ada tapi HTML belum ter-generate"}), 404
+        return jsonify({
+            "tanggal": r["tanggal"].isoformat(),
+            "status":  r["status"],
+            "html":    html,
+        })
+    except db.DbError as e:
+        return jsonify({"error": f"DB error: {e}"}), 500
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/", methods=["POST"])
 @app.route("/api/generate", methods=["POST"])
 def generate_report():
@@ -47,7 +101,6 @@ def generate_report():
         dt = datetime.strptime(tanggal, "%Y-%m-%d")
         tanggal_panjang = f"{dt.day} {BULAN[dt.month-1]} {dt.year}"
 
-        # ==== 1. Parsing ====
         sales_items = parse_sales(penjualan_f, tanggal)
 
         df_all = parse_excel(pengeluaran_f)
@@ -62,19 +115,15 @@ def generate_report():
         if not sales_items and revenue_excel == 0:
             return jsonify({"error": f"Tidak ada penjualan untuk {tanggal_panjang}"}), 400
 
-        # ==== 2. Kalkulasi ====
         fin = calculate_financials(
             sales_items, MENU_DATA, exp_breakdown, exp_total, revenue_excel
         )
         classification = classify_menu(fin['per_menu'], fin['qty_median'], fin['margin_median'])
 
-        # ==== 3. Analisa AI (dengan konteks historis dari Supabase) ====
-        # tanggal_iso diteruskan agar analyzer bisa query data 7 hari sebelumnya.
         analysis = generate_analysis(
             fin, classification, tanggal_panjang, tanggal_iso=tanggal
         )
 
-        # ==== 4. Render HTML ====
         html = env.get_template("report.html").render(
             tanggal_panjang=tanggal_panjang,
             fin=fin,
@@ -82,13 +131,11 @@ def generate_report():
             classification=classification,
         )
 
-        # ==== 5. Simpan ke Supabase (non-blocking) ====
-        # Kegagalan DB tidak boleh menggagalkan output laporan ke user.
         warning = None
         try:
             _save_report(tanggal, fin, classification, analysis, html)
         except db.DbError as e:
-            warning = f"Laporan dibuat, tapi gagal disimpan untuk pembelajaran AI: {e}"
+            warning = f"Laporan dibuat, tapi gagal disimpan: {e}"
             print(f"[db] save_report failed: {e}", file=sys.stderr)
         except Exception as e:
             warning = f"Laporan dibuat, tapi error tak terduga saat menyimpan: {e}"
@@ -105,13 +152,6 @@ def generate_report():
 
 
 def _save_report(tanggal_iso, fin, classification, analysis, html):
-    """
-    Simpan laporan harian ke Supabase.
-
-    Raises:
-        db.DbError subclass pada kegagalan DB.
-    """
-    # --- Ringkasan (tabel reports) ---
     report_data = {
         'tanggal':                   tanggal_iso,
         'revenue':                   fin['revenue'],
@@ -122,14 +162,12 @@ def _save_report(tanggal_iso, fin, classification, analysis, html):
         'sales_revenue_from_detail': fin['sales_revenue_from_detail'],
         'qty_median':                fin['qty_median'],
         'margin_median':             fin['margin_median'],
-        # classification disimpan ringkas (nama + qty + margin) untuk keperluan audit historis
         'classification': {
             k: [{'product': p['product'], 'qty': p['qty'], 'margin': p['margin']} for p in v]
             for k, v in classification.items() if v
         },
     }
 
-    # --- Detail menu (tabel report_menus) ---
     menus_detail = [
         {
             'product':      p['product'],
@@ -145,7 +183,6 @@ def _save_report(tanggal_iso, fin, classification, analysis, html):
         for p in fin['per_menu']
     ]
 
-    # --- Detail pengeluaran (tabel report_expenses) ---
     expenses_detail = []
     for cat, data in fin['expense_breakdown'].items():
         for item in data['items']:
@@ -155,8 +192,6 @@ def _save_report(tanggal_iso, fin, classification, analysis, html):
                 'amount':   item['amount'],
             })
 
-    # --- Fase 1: insert (draft) ---
-    # confirm_overwrite=True agar regenerasi tanggal sama akan menimpa laporan lama.
     report_row = db.insert_report_transaction(
         report_data=report_data,
         menus=menus_detail,
@@ -164,7 +199,6 @@ def _save_report(tanggal_iso, fin, classification, analysis, html):
         confirm_overwrite=True,
     )
 
-    # --- Fase 2: update analisa + HTML (complete) ---
     db.update_report_analysis(
         report_id=report_row['id'],
         analysis=analysis,
