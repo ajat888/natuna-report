@@ -2,17 +2,27 @@
 MENU_DATA = [
     # MAKANAN
     {"category": "Makanan", "name": "Ayam Bakar", "variant": "-", "full_name": "Ayam Bakar", "price": 29000, "hpp": 21500},
+    {"category": "Makanan", "name": "Ayam Bakar", "variant": "Tanpa Nasi", "full_name": "Ayam Bakar Tanpa Nasi", "price": 24000, "hpp": 18500},
     {"category": "Makanan", "name": "Ayam Penyet", "variant": "-", "full_name": "Ayam Penyet", "price": 29000, "hpp": 22500},
+    {"category": "Makanan", "name": "Ayam Penyet", "variant": "Tanpa Nasi", "full_name": "Ayam Penyet Tanpa Nasi", "price": 24000, "hpp": 19500},
     {"category": "Makanan", "name": "Ayam Goreng Lalapan", "variant": "-", "full_name": "Ayam Goreng Lalapan", "price": 35000, "hpp": 26000},
+    {"category": "Makanan", "name": "Ayam Goreng Lalapan", "variant": "Tanpa Nasi", "full_name": "Ayam Goreng Lalapan Tanpa Nasi", "price": 30000, "hpp": 23000},
     {"category": "Makanan", "name": "Ayam Bakar Lalapan", "variant": "-", "full_name": "Ayam Bakar Lalapan", "price": 35000, "hpp": 25000},
+    {"category": "Makanan", "name": "Ayam Bakar Lalapan", "variant": "Tanpa Nasi", "full_name": "Ayam Bakar Lalapan Tanpa Nasi", "price": 30000, "hpp": 22000},
     {"category": "Makanan", "name": "Ayam Kremes", "variant": "-", "full_name": "Ayam Kremes", "price": 30000, "hpp": 25000},
     {"category": "Makanan", "name": "Beef BlackPepper", "variant": "-", "full_name": "Beef BlackPepper", "price": 45000, "hpp": 31000},
     {"category": "Makanan", "name": "Steak Ayam", "variant": "Original", "full_name": "Steak Ayam Original", "price": 27000, "hpp": 13000},
+    {"category": "Makanan", "name": "Steak Ayam", "variant": "Original Tanpa Nasi", "full_name": "Steak Ayam Original Tanpa Nasi", "price": 22000, "hpp": 10000},
     {"category": "Makanan", "name": "Steak Ayam", "variant": "BlackPepper", "full_name": "Steak Ayam BlackPepper", "price": 27000, "hpp": 13000},
+    {"category": "Makanan", "name": "Steak Ayam", "variant": "BlackPepper Tanpa Nasi", "full_name": "Steak Ayam BlackPepper Tanpa Nasi", "price": 22000, "hpp": 10000},
     {"category": "Makanan", "name": "Ayam Geprek", "variant": "Original", "full_name": "Geprek Original", "price": 25000, "hpp": 13000},
+    {"category": "Makanan", "name": "Ayam Geprek", "variant": "Original Tanpa Nasi", "full_name": "Geprek Original Tanpa Nasi", "price": 20000, "hpp": 10000},
     {"category": "Makanan", "name": "Ayam Geprek", "variant": "Ulek", "full_name": "Geprek Ulek", "price": 25000, "hpp": 13000},
+    {"category": "Makanan", "name": "Ayam Geprek", "variant": "Ulek Tanpa Nasi", "full_name": "Geprek Ulek Tanpa Nasi", "price": 20000, "hpp": 10000},
     {"category": "Makanan", "name": "Ayam Geprek", "variant": "Sambal Bawang", "full_name": "Geprek Sambal Bawang", "price": 25000, "hpp": 13000},
+    {"category": "Makanan", "name": "Ayam Geprek", "variant": "Sambal Bawang Tanpa Nasi", "full_name": "Geprek Sambal Bawang Tanpa Nasi", "price": 20000, "hpp": 10000},
     {"category": "Makanan", "name": "Chicken Chop", "variant": "-", "full_name": "Chicken Chop", "price": 30000, "hpp": 16000},
+    {"category": "Makanan", "name": "Chicken Chop", "variant": "Tanpa Nasi", "full_name": "Chicken Chop Tanpa Nasi", "price": 25000, "hpp": 13000},
     {"category": "Makanan", "name": "Nasi Goreng", "variant": "NasGor Telur", "full_name": "NasGor Telur", "price": 15000, "hpp": 9000},
     {"category": "Makanan", "name": "Nasi Goreng", "variant": "NasGor Ayam", "full_name": "NasGor Ayam", "price": 20000, "hpp": 14000},
     {"category": "Makanan", "name": "Nasi Goreng", "variant": "NasGor Spesial", "full_name": "NasGor Spesial", "price": 25000, "hpp": 14000},
@@ -28,6 +38,7 @@ MENU_DATA = [
 
     # BERKUAH, MIE & IKAN
     {"category": "Berkuah/Mie", "name": "Sup Tulang Iga+Nasi", "variant": "-", "full_name": "Sup Tulang Iga", "price": 55000, "hpp": 43000},
+    {"category": "Berkuah/Mie", "name": "Sup Tulang Iga", "variant": "Tanpa Nasi", "full_name": "Sup Tulang Iga Tanpa Nasi", "price": 50000, "hpp": 40000},
     {"category": "Berkuah/Mie", "name": "Bakso", "variant": "Urat", "full_name": "Bakso Urat", "price": 20000, "hpp": 14500},
     {"category": "Berkuah/Mie", "name": "Bakso", "variant": "Mekar", "full_name": "Bakso Mekar", "price": 25000, "hpp": 14500},
     {"category": "Berkuah/Mie", "name": "Bakso", "variant": "Spesial", "full_name": "Bakso Spesial", "price": 30000, "hpp": 19500},
@@ -101,18 +112,31 @@ MENU_DATA = [
     # LAIN-LAIN
     {"category": "Lainnya", "name": "Mineral", "variant": "-", "full_name": "mineral", "price": 5000, "hpp": 3000},
     {"category": "Lainnya", "name": "Air Mineral", "variant": "-", "full_name": "air mineral", "price": 5000, "hpp": 3000},
+    {"category": "Lainnya", "name": "Es Batu", "variant": "-", "full_name": "es batu", "price": 2000, "hpp": 500},
+    {"category": "Lainnya", "name": "Es Kosong", "variant": "-", "full_name": "es kosong", "price": 2000, "hpp": 500},
 ]
 
 # Kamus untuk memetakan nama di POS (kiri) ke nama di Daftar Menu (kanan)
-# Ini menyelesaikan masalah "Steak Original" tertukar dengan "Ayam Geprek Original"
 ALIAS_MAP = {
+    # Varian Tanpa Nasi (dari gambar POS)
+    "ayam bakar la x": "Ayam Bakar Lalapan Tanpa Nasi",
+    "ayam bakar x": "Ayam Bakar Tanpa Nasi",
+    "ayam goreng la x": "Ayam Goreng Lalapan Tanpa Nasi",
+    "ayam penyet x": "Ayam Penyet Tanpa Nasi",
+    "chicken chop x": "Chicken Chop Tanpa Nasi",
+    "geprek original x": "Geprek Original Tanpa Nasi",
+    "geprek s. bawang x": "Geprek Sambal Bawang Tanpa Nasi",
+    "geprek ulek x": "Geprek Ulek Tanpa Nasi",
+    "steak b.pepper x": "Steak Ayam BlackPepper Tanpa Nasi",
+    "steak original x": "Steak Ayam Original Tanpa Nasi",
+    "sup tulang iga x": "Sup Tulang Iga Tanpa Nasi",
+
+    # Alias Reguler (dari POS)
     "steak original": "Steak Ayam Original",
     "steak blackpepper": "Steak Ayam BlackPepper",
-    "steak b.pepper x": "Steak Ayam BlackPepper",
-    "steak original x": "Steak Ayam Original",
     "milo es": "Milo Es",
-    "chicken chop x": "Chicken Chop",
-    "ayam bakar la.": "Ayam Bakar",
+    "ayam bakar la.": "Ayam Bakar Lalapan",
+    "ayam goreng la.": "Ayam Goreng Lalapan",
     "geprek s. bawang": "Geprek Sambal Bawang",
     "ayam kremes": "Ayam Kremes",
     "nila bakar besar": "Nila Bakar Besar",
@@ -122,7 +146,6 @@ ALIAS_MAP = {
     "nila p. manis kecil": "Nila P. Manis Kecil",
     "nila p. manis besar": "Nila P. Manis Besar",
     "mie b. seafood": "Mie B. Seafood",
-    "sup tulang iga x": "Sup Tulang Iga",
     "sup tulang iga+nasi": "Sup Tulang Iga",
     "nasgor telur": "NasGor Telur",
     "nasgor ayam": "NasGor Ayam",
@@ -139,4 +162,11 @@ ALIAS_MAP = {
     "esteh": "Teh Es",
     "milo latte": "Milo Latte",
     "milo panas": "Milo Latte",
+
+    # Perbaikan Bug (Item di luar alias sebelumnya)
+    "es batu": "es batu",
+    "es  batu": "es batu",
+    "es kosong": "es kosong",
+    "cincau es": "Cincau Susu", # POS nulisnya cincau es, padahal di menu Cincau Susu
+    "lemon es": "Lemon Tea",   # POS nulisnya lemon es, padahal di menu Lemon Tea
 }
