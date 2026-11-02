@@ -14,7 +14,7 @@ SYSTEM_PROMPT = (
     "Seluruh isi jawaban HARUS dalam Bahasa Indonesia yang baku dan mudah dipahami pemilik usaha. "
     "DILARANG menggunakan kata atau istilah Inggris dalam teks jawaban, termasuk namun tidak terbatas pada: "
     "revenue, traffic, cost, margin, bundle, bundling, promo, happy hour, upsell, cross-sell, waste, "
-    "action plan, insight, headline, gap, driver, growth, discount, paket bundle, family bundle, dsb. "
+    "action plan, insight, headline, gap, driver, growth, discount, paket bundle, family bundle, overhead, stock, dsb. "
     "Gunakan padanan berikut: revenue=pendapatan, traffic=kunjungan, cost=biaya, "
     "margin=laba/margin (margin sudah lazim, tetap boleh), bundle=bundel/paket, promo=promosi, "
     "happy hour=jam promo, upsell=penawaran tambahan, waste=pemborosan, "
@@ -25,12 +25,32 @@ SYSTEM_PROMPT = (
     "Nama produk/menu (misalnya 'Steak Original', 'Milo Latte') dan singkatan teknis seperti HPP boleh dipertahankan. "
     "ATURAN ANALISIS: "
     "(1) Ringkasan pembuka WAJIB menyebut angka Titik Impas dan selisih dalam 1 kalimat tajam. "
-    "(2) Diagnosis WAJIB menyebut SATU akar masalah utama berdasarkan situasi yang diberikan, bukan daftar panjang. "
+    "(2) Diagnosis WAJIB mengikuti aturan konsistensi status di bawah — tidak boleh bertentangan dengan status situasi. "
     "(3) Instruksi harus spesifik dengan angka dan realistis untuk besok. "
     "(4) Manfaatkan pola historis dan konteks pembelajaran jika tersedia — jangan mengarang, jangan mengulang template. "
     "(5) Jangan mengarang nama menu, angka, atau pola yang tidak ada di data. "
     "(6) Jangan menyebut angka rasio minuman per makanan selain yang tertulis di prompt. "
     "(7) Bedakan Laba Operasional (untung/rugi sesungguhnya) dengan Arus Kas Harian (uang masuk dikurangi uang keluar). "
+    "ATURAN KONSISTENSI STATUS-DIAGNOSIS (WAJIB): "
+    "Situasi menentukan nada diagnosis — tidak boleh bertentangan. "
+    "- Jika situasi = Sehat: Diagnosis HARUS DIAWALI dengan 'Operasional hari ini sehat' atau sejenisnya, menyebut laba operasional positif. "
+    "  DILARANG memakai kata 'akar masalah', 'masalah utama', 'masalah utama adalah', atau menyebut restoran dalam kondisi bermasalah. "
+    "  Jika ada catatan seperti HPP sedikit tinggi, pendapatan di bawah rata-rata, atau kas tipis, sebut sebagai 'catatan pengembangan' atau 'peluang optimasi', BUKAN masalah. "
+    "- Jika situasi = Belanja Stok Berlebih: Diagnosis fokus pada belanja stok yang menumpuk menyebabkan kas negatif meski operasional untung. "
+    "- Jika situasi = Kunjungan Rendah: Diagnosis fokus pendapatan jauh di bawah titik impas. "
+    "- Jika situasi = HPP Terlalu Tinggi: Diagnosis fokus HPP melebihi batas sehat atau naik dari biasanya. "
+    "- Jika situasi = Biaya Operasional Tinggi: Diagnosis fokus beban non-bahan yang membengkak. "
+    "- Jika situasi = Margin Tipis: Diagnosis fokus campuran menu yang membuat laba tipis. "
+    "- Jika situasi = Kritis: Diagnosis fokus penyelamatan kas darurat. "
+    "ATURAN AKSI-NYAMBUNG-DIAGNOSIS (WAJIB): "
+    "Setiap aksi HARUS menjawab akar masalah di diagnosis. Dilarang memberi aksi yang tidak terkait atau berlawanan arah. "
+    "- Jika diagnosis Kunjungan Rendah → aksi HANYA tentang: promosi, jam promo, aktifkan pelanggan lama, paket menarik, penawaran jam sepi. "
+    "- Jika diagnosis Belanja Stok Berlebih → aksi HANYA tentang: batasi belanja stok, audit stok akhir hari, olah bahan berlebih jadi menu paket, tunda pembelian. "
+    "- Jika diagnosis HPP Terlalu Tinggi → aksi HANYA tentang: negosiasi harga bahan, reformulasi porsi, sesuaikan harga jual menu, kurangi pemborosan dapur. "
+    "- Jika diagnosis Biaya Operasional Tinggi → aksi HANYA tentang: audit listrik, gas, kemasan, air, efisiensi operasional. "
+    "- Jika diagnosis Margin Tipis → aksi HANYA tentang: dorong menu bermargin tinggi, kurangi menu bermargin rendah, sesuaikan campuran menu. "
+    "- Jika diagnosis Sehat → aksi HANYA tentang: pengembangan (naikkan margin absolut, perluas pelanggan, promosi terarah), BUKAN pemangkasan darurat. "
+    "Jika ada anomali harga atau produk tanpa HPP, boleh disisipkan sebagai SATU aksi tambahan tanpa melanggar aturan di atas. "
     "Output HARUS berupa JSON yang valid."
 )
 
@@ -48,7 +68,7 @@ def _clean(text):
 
 
 def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
-                      bep_info, situation_label, hist_text, learning_ctx):
+                      bep_info, situation, situation_label, hist_text, learning_ctx):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     menu_lines = []
@@ -100,24 +120,21 @@ Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
 
 RINGKASAN KEUANGAN HARI INI
 - Pendapatan: {_fmt(fin['revenue'])}
-- HPP (bahan terjual, dari daftar menu acuan): {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari pendapatan)
+- HPP (bahan terjual): {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari pendapatan)
 - Laba Kotor: {_fmt(fin['gross_profit'])}
-- Beban Non-Bahan (overhead: listrik, gas, cup, tisu, dll): {_fmt(fin['overhead_expenses'])}
-- Laba Operasional (pendapatan - HPP - beban non-bahan): {_fmt(fin['operating_profit'])} ({status_op})
-- Belanja Stok Bahan (uang keluar untuk beli bahan): {_fmt(fin['bahan_purchases'])}
-- Total Belanja Kas (bahan + beban non-bahan): {_fmt(fin['expenses'])}
-- Arus Kas Harian (pendapatan - total belanja): {_fmt(fin['cash_flow'])} ({status_cash})
+- Beban Non-Bahan: {_fmt(fin['overhead_expenses'])}
+- Laba Operasional: {_fmt(fin['operating_profit'])} ({status_op})
+- Belanja Stok Bahan: {_fmt(fin['bahan_purchases'])}
+- Total Belanja Kas: {_fmt(fin['expenses'])}
+- Arus Kas Harian: {_fmt(fin['cash_flow'])} ({status_cash})
 
-CATATAN PENTING:
-Laba Operasional mengukur keuntungan sesungguhnya.
-Arus Kas Harian mengukur pergerakan uang di kas/bank hari ini.
-Bisa jadi Laba Operasional UNTUNG tetapi Arus Kas NEGATIF jika belanja stok bahan lebih besar dari bahan yang terjual (stok menumpuk).
-
-TITIK IMPAS (WAJIB DIRUJUK DI RINGKASAN & DIAGNOSIS)
-- Titik impas pendapatan hari ini: {_fmt(bep_info['bep'])}
-- Beban non-bahan harian (patokan): {_fmt(bep_info['fixed_cost'])}
+TITIK IMPAS
+- Titik impas pendapatan hari ini: {_fmt(bep_info['bep'])} (dihitung dari beban non-bahan hari ini)
+- Beban non-bahan yang dipakai: {_fmt(bep_info['fixed_cost'])}
 - Selisih pendapatan terhadap titik impas: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
-- Situasi (hasil mesin aturan): {situation_label}
+
+SITUASI (dari mesin aturan — WAJIB IKUTI):
+{situation_label}
 
 RASIO MINUMAN PER MAKANAN HARI INI: {attach_rate_pct:.1f}%
 WAJIB: jika instruksi menyebut rasio minuman, gunakan angka PERSIS di atas. Jangan menyebut angka lain.
@@ -139,39 +156,38 @@ ANOMALI HARGA (harga kasir tidak sama dengan daftar menu acuan — perlu validas
 
 {hist_text}
 
-POLA PEMBELAJARAN LINTAS HARI (semakin kaya seiring waktu):
+POLA PEMBELAJARAN LINTAS HARI:
 {learning_text}
 
 TUGAS:
-Hasilkan JSON PERSIS dengan struktur ini (semua nilai teks dalam Bahasa Indonesia murni, tanpa kata Inggris):
+Hasilkan JSON PERSIS dengan struktur ini (semua nilai teks Bahasa Indonesia murni, tanpa kata Inggris):
 {{
   "kondisi": "Rugi" atau "Untung",
-  "headline": "1 kalimat tajam menyebut Titik Impas, selisih, dan 1 arahan utama",
-  "diagnosis": "2-3 kalimat menyebut SATU akar masalah utama sesuai situasi. Bandingkan dengan tren historis bila ada.",
+  "headline": "1 kalimat tajam menyebut Titik Impas, selisih, dan 1 arahan utama — konsisten dengan situasi",
+  "diagnosis": "2-3 kalimat. WAJIB mengikuti aturan konsistensi status: jika Sehat, awali 'Operasional hari ini sehat'; jika situasi lain, sebut SATU akar masalah sesuai situasi.",
   "instruksi": [
     {{"aksi": "Tindakan taktis spesifik dengan angka", "alasan": "Kenapa ini menyelesaikan akar masalah"}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}}
   ],
-  "strategi": "1 paragraf gaya Konsultan: hubungkan akar masalah, pola historis, dan langkah 3-7 hari ke depan."
+  "strategi": "1 paragraf gaya Konsultan: hubungkan situasi, pola historis, dan langkah 3-7 hari ke depan."
 }}
 
-PANDUAN ARAHAN BERDASARKAN SITUASI:
-- Sehat: operasional untung dan kas positif. Fokus pengembangan.
-- Belanja Stok Berlebih: operasional untung tetapi kas negatif besar. Fokus kurangi pembelian stok.
-- Kunjungan Rendah: pendapatan jauh di bawah titik impas. Fokus naikkan transaksi.
-- Biaya Operasional Tinggi: beban non-bahan mendekati titik kritis. Fokus audit biaya.
-- HPP Terlalu Tinggi: HPP > 68% pendapatan atau naik dari rata-rata. Fokus negosiasi bahan dan reformulasi.
-- Margin Tipis: tidak masuk kategori di atas namun operasional rugi. Fokus perbaikan campuran menu.
-- Kritis: pendapatan nol atau sangat rendah. Fokus penyelamatan kas darurat.
+PANDUAN AKSI PER SITUASI (WAJIB):
+- Sehat → aksi soal pengembangan (naikkan margin absolut, promosi terarah, perluas pelanggan). DILARANG menyuruh memangkas biaya atau menyebut 'masalah'.
+- Belanja Stok Berlebih → aksi soal batasi belanja stok, audit stok, olah bahan berlebih jadi menu paket, tunda pembelian.
+- Kunjungan Rendah → aksi soal promosi, jam promo, aktifkan pelanggan lama, paket menarik.
+- HPP Terlalu Tinggi → aksi soal negosiasi bahan, reformulasi porsi, sesuaikan harga jual.
+- Biaya Operasional Tinggi → aksi soal audit listrik, gas, kemasan, air.
+- Margin Tipis → aksi soal dorong menu bermargin tinggi, kurangi menu bermargin rendah.
+- Kritis → aksi penyelamatan kas darurat 24 jam.
 
 ATURAN TAMBAHAN:
-- Jika ada PRODUK TANPA HPP berulang di pola pembelajaran, sarankan penambahan alias atau penyelarasan daftar menu acuan sebagai salah satu instruksi.
-- Jika ada ANOMALI HARGA yang signifikan, sarankan validasi harga kasir atau pembaruan daftar menu.
-- Jika rasio minuman per makanan di bawah 60%, sarankan strategi penawaran tambahan minuman.
-- DILARANG menulis kata Inggris dalam nilai JSON (kecuali nama produk/menu dan singkatan HPP).
+- Jika ada PRODUK TANPA HPP berulang di pola pembelajaran, boleh tambah SATU aksi soal penambahan alias menu.
+- Jika ada ANOMALI HARGA signifikan, boleh tambah SATU aksi soal validasi harga kasir.
 - Jangan menyebut rasio minuman selain {attach_rate_pct:.1f}%.
+- DILARANG menulis kata Inggris dalam nilai JSON (kecuali nama produk/menu dan singkatan HPP).
 """
 
     resp = client.chat.completions.create(
@@ -197,6 +213,17 @@ ATURAN TAMBAHAN:
                 item['aksi'] = _clean(item['aksi'])
             if item.get('alasan'):
                 item['alasan'] = _clean(item['alasan'])
+
+    if situation == 'SEHAT':
+        diag = data.get('diagnosis') or ''
+        forbidden = ['akar masalah', 'masalah utama', 'masalah utama adalah']
+        has_forbidden = any(w in diag.lower() for w in forbidden)
+        if has_forbidden or not diag.lower().startswith(('operasional', 'kondisi', 'hari ini')):
+            data['diagnosis'] = (
+                f"Operasional hari ini sehat: laba operasional {_fmt(fin['operating_profit'])} "
+                f"dan arus kas {_fmt(fin['cash_flow'])}. "
+                f"{diag}"
+            ).strip()
 
     if not data.get('strategi'):
         data['strategi'] = data.get('diagnosis') or 'Belum ada strategi naratif yang dihasilkan.'

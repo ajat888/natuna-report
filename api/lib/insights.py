@@ -130,14 +130,26 @@ def build_historical_context(tanggal_iso, days=7):
 
 def compute_bep(fin, avg_overhead):
     rev = fin['revenue']
+    overhead_aktual = float(fin.get('overhead_expenses') or 0)
+
     if rev <= 0:
         return {
-            'bep': 0, 'hpp_ratio': 0.0, 'fixed_cost': 0,
-            'gap': -int(fin.get('overhead_expenses') or 0), 'gap_pct': 0.0,
+            'bep': 0, 'hpp_ratio': 0.0, 'fixed_cost': int(overhead_aktual),
+            'gap': -int(overhead_aktual), 'gap_pct': 0.0,
+            'fixed_cost_source': 'aktual',
         }
 
     hpp_ratio = fin['hpp'] / rev
-    fixed_cost = avg_overhead if avg_overhead and avg_overhead > 0 else fin['overhead_expenses']
+
+    if overhead_aktual > 0:
+        fixed_cost = overhead_aktual
+        source = 'aktual'
+    elif avg_overhead and avg_overhead > 0:
+        fixed_cost = avg_overhead
+        source = 'historis'
+    else:
+        fixed_cost = 0
+        source = 'nol'
 
     if hpp_ratio >= 0.99 or fixed_cost <= 0:
         bep = 0
@@ -153,6 +165,7 @@ def compute_bep(fin, avg_overhead):
         'fixed_cost': int(round(fixed_cost)),
         'gap': int(round(gap)),
         'gap_pct': round(gap_pct, 1),
+        'fixed_cost_source': source,
     }
 
 
@@ -169,7 +182,7 @@ def classify_situation(fin, bep_info, hist_meta):
 
     if hpp_ratio > 0.68:
         return 'HPP_TINGGI'
-    if hist_hpp > 0 and hpp_ratio > hist_hpp + 0.02 and hpp_ratio > 0.60:
+    if hist_hpp > 0 and hpp_ratio > hist_hpp + 0.03 and hpp_ratio > 0.60:
         return 'HPP_TINGGI'
 
     if op > 0 and cash < 0 and abs(cash) > op * 0.5:

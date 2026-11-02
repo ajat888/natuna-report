@@ -231,7 +231,7 @@
     <span class="val-success">{{ fin.gross_profit|rupiah }}</span>
   </div>
   <div class="summary-row">
-    <span>Beban Non-Bahan (overhead)</span>
+    <span>Beban Non-Bahan</span>
     <span class="fw-bold val-danger">{{ fin.overhead_expenses|rp_neg }}</span>
   </div>
   <div class="summary-row total" style="color: {% if fin.operating_profit < 0 %}var(--danger){% else %}var(--success){% endif %};">
