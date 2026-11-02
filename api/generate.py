@@ -167,9 +167,10 @@ def generate_report():
 
         learning_ctx = build_learning_context(tanggal)
 
+        # PERBAIKAN: Memasukkan variabel 'situation' ke dalam parameter
         analysis = generate_analysis(
             fin, classification, tanggal_panjang, tanggal,
-            bep_info, situation_label, hist_text, learning_ctx,
+            bep_info, situation, situation_label, hist_text, learning_ctx,
         )
 
         warnings = build_warnings(duplicate_expenses, fin, hist_text)
