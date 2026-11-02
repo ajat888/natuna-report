@@ -1,20 +1,101 @@
 import os, json
+from datetime import datetime, timedelta
+
 from groq import Groq
+
+from . import db
+
 
 SYSTEM_PROMPT = (
     "Anda adalah Manajer Operasional Restoran sekaligus Konsultan Bisnis F&B yang tegas, cerdas, dan praktis. "
     "Tugas Anda: menganalisa data keuangan harian dan memberikan instruksi taktis (Action Plan) beserta edukasi strateginya. "
     "Gunakan bahasa Indonesia yang profesional, lugas, dan berorientasi pada solusi (Action-Oriented). "
+    "Jika tersedia data historis, WAJIB bandingkan kondisi hari ini dengan tren beberapa hari terakhir sebelum menyimpulkan. "
     "Output HARUS berupa JSON yang valid."
 )
+
 
 def _fmt(n):
     return f"Rp {n:,.0f}".replace(",", ".")
 
-def generate_analysis(fin, classification, tanggal_panjang):
+
+def _build_historical_context(tanggal_iso, days=7):
+    """
+    Ambil ringkasan `days` hari sebelum tanggal_iso (tidak termasuk hari-H).
+    Return string kosong bila data tidak ada / DB tidak tersedia / error apapun.
+
+    Defensive by design: kalau Supabase belum dikonfigurasi (laporan pertama),
+    fungsi ini tidak boleh menggagalkan proses analisa.
+    """
+    try:
+        tgl = datetime.strptime(tanggal_iso, "%Y-%m-%d").date()
+        from_date = (tgl - timedelta(days=days)).isoformat()
+        to_date   = (tgl - timedelta(days=1)).isoformat()
+    except Exception:
+        return ""
+
+    try:
+        reports = db.get_reports_in_range(from_date, to_date)
+    except Exception:
+        return ""
+
+    if not reports:
+        return ""
+
+    lines = [f"KONTEKS HISTORIS ({days} hari sebelum {tanggal_iso}):"]
+
+    # --- 1. Ringkasan harian ---
+    lines.append("Ringkasan harian:")
+    revenues, nets = [], []
+    for r in reports:
+        lines.append(
+            f"- {r['tanggal']}: Revenue={_fmt(r['revenue'])}, "
+            f"HPP={_fmt(r['hpp'])}, Expenses={_fmt(r['expenses'])}, "
+            f"Net={_fmt(r['net_cash_flow'])}"
+        )
+        revenues.append(float(r['revenue']))
+        nets.append(float(r['net_cash_flow']))
+
+    if revenues:
+        avg_rev = sum(revenues) / len(revenues)
+        avg_net = sum(nets) / len(nets)
+        lines.append("")
+        lines.append(f"Rata-rata Revenue: {_fmt(avg_rev)}")
+        lines.append(f"Rata-rata Net Cash Flow: {_fmt(avg_net)}")
+
+    # --- 2. Top 5 menu (agregat periode) ---
+    try:
+        top_menus = db.get_menus_aggregate(from_date, to_date, group_by='matched_name')[:5]
+        if top_menus:
+            lines.append("")
+            lines.append("Top 5 menu berdasarkan revenue (periode ini):")
+            for m in top_menus:
+                lines.append(
+                    f"- {m['group_key']}: qty={m['total_qty']}, "
+                    f"revenue={_fmt(float(m['total_revenue']))}, "
+                    f"margin={_fmt(float(m['total_margin']))}"
+                )
+    except Exception:
+        pass
+
+    # --- 3. Median pengeluaran per kategori (referensi anomali) ---
+    try:
+        medians = db.get_expenses_median_by_category(from_date, to_date)
+        if medians:
+            lines.append("")
+            lines.append("Median pengeluaran harian per kategori (patokan normal):")
+            for cat, med in medians.items():
+                lines.append(f"- {cat}: {_fmt(med)}")
+    except Exception:
+        pass
+
+    return "\n".join(lines)
+
+
+def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso=None):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-    # Ringkas per menu
+    # ---- Ringkas per menu ----
     menu_lines = []
     for p in sorted(
         [x for x in fin['per_menu'] if x['margin'] is not None],
@@ -25,21 +106,32 @@ def generate_analysis(fin, classification, tanggal_panjang):
             f"laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
         )
 
+    # ---- Klasifikasi ----
     cls_lines = []
     for cat, items in classification.items():
         if not items:
             continue
-        names = ', '.join(f"{i['product']} (qty {i['qty']}, laba {_fmt(i['margin'])})" for i in items[:8])
+        names = ', '.join(
+            f"{i['product']} (qty {i['qty']}, laba {_fmt(i['margin'])})"
+            for i in items[:8]
+        )
         cls_lines.append(f"- {cat}: {names}")
 
+    # ---- Rincian pengeluaran ----
     expenses = fin['expense_breakdown']
     exp_lines = []
     for cat, data in expenses.items():
-        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:15])
+        items_str = ', '.join(
+            f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:15]
+        )
         exp_lines.append(f"- {cat} ({_fmt(data['total'])}): {items_str}")
 
-    # Tentukan status untung/rugi untuk memandu AI
     status_net = "RUGI" if fin['net_cash_flow'] < 0 else "UNTUNG"
+
+    # ---- Konteks historis (opsional) ----
+    hist_text = _build_historical_context(tanggal_iso) if tanggal_iso else ""
+    if not hist_text:
+        hist_text = "(belum ada data historis — ini laporan pertama atau data historis belum tersedia)"
 
     prompt = f"""
 Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
@@ -60,24 +152,28 @@ KLASIFIKASI MENU:
 RINCIAN PENGELUARAN:
 {chr(10).join(exp_lines) if exp_lines else '- tidak ada'}
 
+{hist_text}
+
 Tugas: Hasilkan JSON PERSIS dengan struktur ini:
 {{
   "kondisi": "Rugi" atau "Untung",
-  "diagnosis": "1-2 kalimat diagnosis tajam gaya Manajer. Sebutkan angka defisit/surplus dan akar masalah/pemicunya.",
+  "diagnosis": "1-2 kalimat diagnosis tajam gaya Manajer. Sebutkan angka defisit/surplus. Jika ada data historis, WAJIB bandingkan dengan tren rata-rata dan sebutkan arah pergerakannya (misal: 'Net hari ini X, lebih baik/buruk Y% dari rata-rata 7 hari terakhir').",
   "instruksi": [
     {{"aksi": "Instruksi taktis spesifik (misal: Stop belanja bahan X, Genjot menu Y, Evaluasi porsi Z)", "alasan": "Penjelasan singkat kenapa aksi ini dilakukan"}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}}
   ],
-  "strategi": "1 paragraf penjelasan gaya Konsultan Bisnis. Edukasi kenapa fenomena ini terjadi dan strategi jangka panjang agar bisnis makin sehat (misal: soal timing belanja, margin, atau manajemen stok)."
+  "strategi": "1 paragraf penjelasan gaya Konsultan Bisnis. Jika ada data historis, kaitkan dengan pola berulang (misal: pengeluaran kategori X konsisten di atas median, menu Y selalu jadi primadona, atau tren revenue yang menurun 3 hari berturut-turut)."
 }}
 
 Aturan Penting:
-- Jika kondisi "Rugi", instruksi dan strategi harus fokus pada PENYELAMATAN KAS (menahan belanja, genjot menu margin tinggi).
-- Jika kondisi "Untung", instruksi dan strategi harus fokus pada PENGEMBANGAN (amankan stok laris, sisihkan dana darurat, apresiasi tim).
+- Jika kondisi "Rugi", instruksi dan strategi fokus pada PENYELAMATAN KAS (menahan belanja, genjot menu margin tinggi).
+- Jika kondisi "Untung", instruksi dan strategi fokus pada PENGEMBANGAN (amankan stok laris, sisihkan dana darurat, apresiasi tim).
+- Jika ada data historis: bandingkan hari ini dengan rata-rata; identifikasi anomali pengeluaran (nominal jauh di atas median historis).
 - Berikan 3 sampai 4 poin instruksi yang realistis untuk besok.
 - Jangan mengarang nama menu jika tidak ada di data.
 """
+
     resp = client.chat.completions.create(
         model="openai/gpt-oss-120b",
         messages=[
