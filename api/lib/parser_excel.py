@@ -3,6 +3,7 @@ import pandas as pd
 
 REQUIRED_COLS = ['Tanggal', 'Kategori', 'Sub kategori', 'IDR', 'Pendapatan/Pengeluaran']
 
+
 def parse_excel(file_obj):
     raw = file_obj.read() if hasattr(file_obj, 'read') else file_obj
     try:
@@ -26,13 +27,11 @@ def filter_by_date(df, target_date_iso):
 
 
 def extract_revenue(df_day):
-    """Pendapatan tercatat di Excel (Kategori='semua')."""
     mask = df_day['Pendapatan/Pengeluaran'].astype(str).str.lower() == 'pendapatan'
     return int(df_day.loc[mask, 'IDR'].fillna(0).sum())
 
 
 def extract_expenses(df_day):
-    """Return dict {kategori: {'items': [{sub, amount}], 'total': int}} + grand total."""
     mask = df_day['Pendapatan/Pengeluaran'].astype(str).str.lower() == 'pengeluaran'
     exp = df_day[mask]
 
@@ -50,3 +49,30 @@ def extract_expenses(df_day):
         grand += amt
 
     return breakdown, grand
+
+
+def detect_duplicate_expenses(df_day):
+    mask = df_day['Pendapatan/Pengeluaran'].astype(str).str.lower() == 'pengeluaran'
+    exp = df_day[mask].copy()
+    if exp.empty:
+        return []
+    exp['_key'] = (
+        exp['Kategori'].astype(str).str.strip().str.lower() + '|' +
+        exp['Sub kategori'].astype(str).str.strip().str.lower() + '|' +
+        exp['IDR'].fillna(0).astype(int).astype(str)
+    )
+    counts = exp['_key'].value_counts()
+    dup_keys = counts[counts > 1].index.tolist()
+    result = []
+    for key in dup_keys:
+        row = exp[exp['_key'] == key].iloc[0]
+        occ = int(counts[key])
+        amt = int(row['IDR']) if pd.notna(row['IDR']) else 0
+        result.append({
+            'category': str(row['Kategori']).strip(),
+            'sub': str(row['Sub kategori']).strip(),
+            'amount': amt,
+            'occurrences': occ,
+            'total_impact': amt * occ,
+        })
+    return result

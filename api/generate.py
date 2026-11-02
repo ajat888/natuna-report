@@ -5,11 +5,16 @@ from jinja2 import Environment, FileSystemLoader
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from lib.parser_sales  import parse_sales
-from lib.parser_excel  import parse_excel, filter_by_date, extract_revenue, extract_expenses
-from lib.calculator    import calculate_financials, classify_menu
-from lib.analyzer      import generate_analysis
-from lib.menu_data     import MENU_DATA
+from lib.parser_sales import parse_sales
+from lib.parser_excel import parse_excel, filter_by_date, extract_revenue, extract_expenses, detect_duplicate_expenses
+from lib.calculator import calculate_financials, classify_menu
+from lib.analyzer import generate_analysis
+from lib.menu_data import MENU_DATA
+from lib.insights import (
+    build_historical_context, compute_bep, classify_situation,
+    SITUATION_LABELS, SITUATION_CLASSES, compute_day_of_week,
+)
+from lib.learning import build_learning_context
 from lib import db
 
 app = Flask(__name__)
@@ -42,11 +47,13 @@ def list_reports():
         rows = db.list_reports_summary(limit=limit)
         reports = [
             {
-                "tanggal":       r["tanggal"].isoformat(),
-                "revenue":       int(r["revenue"]),
-                "expenses":      int(r["expenses"]),
+                "tanggal": r["tanggal"].isoformat(),
+                "revenue": int(r["revenue"]),
+                "expenses": int(r["expenses"]),
                 "net_cash_flow": int(r["net_cash_flow"]),
-                "status":        r["status"],
+                "bep_revenue": int(r["bep_revenue"] or 0),
+                "situation": r.get("situation"),
+                "status": r["status"],
             }
             for r in rows
         ]
@@ -76,8 +83,8 @@ def get_report(tanggal):
             return jsonify({"error": "Laporan ada tapi HTML belum ter-generate"}), 404
         return jsonify({
             "tanggal": r["tanggal"].isoformat(),
-            "status":  r["status"],
-            "html":    html,
+            "status": r["status"],
+            "html": html,
         })
     except db.DbError as e:
         return jsonify({"error": f"DB error: {e}"}), 500
@@ -110,15 +117,16 @@ def delete_report_route(tanggal):
 @app.route("/api/generate", methods=["POST"])
 def generate_report():
     try:
-        penjualan_f   = request.files.get("penjualan")
+        penjualan_f = request.files.get("penjualan")
         pengeluaran_f = request.files.get("pengeluaran")
-        tanggal       = (request.form.get("tanggal") or "").strip()
+        tanggal = (request.form.get("tanggal") or "").strip()
 
         if not (penjualan_f and pengeluaran_f and tanggal):
             return jsonify({"error": "File penjualan, pengeluaran, dan tanggal wajib diisi"}), 400
 
         dt = datetime.strptime(tanggal, "%Y-%m-%d")
         tanggal_panjang = f"{dt.day} {BULAN[dt.month-1]} {dt.year}"
+        hari = compute_day_of_week(tanggal)
 
         if os.environ.get("DATABASE_URL"):
             try:
@@ -138,39 +146,58 @@ def generate_report():
 
         revenue_excel = extract_revenue(df_day)
         exp_breakdown, exp_total = extract_expenses(df_day)
+        duplicate_expenses = detect_duplicate_expenses(df_day)
 
         if not sales_items and revenue_excel == 0:
             return jsonify({"error": f"Tidak ada penjualan untuk {tanggal_panjang}"}), 400
 
-        fin = calculate_financials(
-            sales_items, MENU_DATA, exp_breakdown, exp_total, revenue_excel
-        )
+        fin = calculate_financials(sales_items, MENU_DATA, exp_breakdown, exp_total, revenue_excel)
         classification = classify_menu(fin['per_menu'], fin['qty_median'], fin['margin_median'])
 
+        hist_text, hist_meta = build_historical_context(tanggal, days=7)
+        bep_info = compute_bep(fin, hist_meta.get('avg_expense', 0))
+        situation = classify_situation(fin, bep_info, hist_meta.get('avg_revenue', 0))
+        situation_label = SITUATION_LABELS.get(situation, situation)
+        situation_class = SITUATION_CLASSES.get(situation, 'marginal')
+
+        learning_ctx = build_learning_context(tanggal)
+
         analysis = generate_analysis(
-            fin, classification, tanggal_panjang, tanggal_iso=tanggal
+            fin, classification, tanggal_panjang, tanggal,
+            bep_info, situation, hist_text, learning_ctx,
         )
+
+        warnings = build_warnings(duplicate_expenses, fin, hist_text)
 
         html = env.get_template("report.html").render(
             tanggal_panjang=tanggal_panjang,
+            hari=hari,
             fin=fin,
             analysis=analysis,
             classification=classification,
+            bep_info=bep_info,
+            situation=situation,
+            situation_label=situation_label,
+            situation_class=situation_class,
+            warnings=warnings,
+            hist_meta=hist_meta,
         )
 
-        warning = None
+        warning_msg = None
         try:
-            _save_report(tanggal, fin, classification, analysis, html)
+            _save_report(tanggal, fin, classification, analysis, html, bep_info, situation)
         except db.DbError as e:
-            warning = f"Laporan dibuat, tapi gagal disimpan: {e}"
+            warning_msg = f"Laporan dibuat, tapi gagal disimpan: {e}"
             print(f"[db] save_report failed: {e}", file=sys.stderr)
         except Exception as e:
-            warning = f"Laporan dibuat, tapi error tak terduga saat menyimpan: {e}"
+            warning_msg = f"Laporan dibuat, tapi error tak terduga saat menyimpan: {e}"
             print(f"[db] unexpected save error: {e}", file=sys.stderr)
 
-        response = {"html": html}
-        if warning:
-            response["warning"] = warning
+        response = {"html": html, "situation": situation, "bep_revenue": bep_info['bep']}
+        if warnings:
+            response["warnings"] = warnings
+        if warning_msg:
+            response["warning"] = warning_msg
         return jsonify(response)
 
     except Exception as e:
@@ -178,34 +205,67 @@ def generate_report():
         return jsonify({"error": str(e)}), 500
 
 
-def _save_report(tanggal_iso, fin, classification, analysis, html):
+def build_warnings(duplicate_expenses, fin, hist_text):
+    warnings = []
+
+    for d in duplicate_expenses:
+        warnings.append(
+            f"Pengeluaran ganda: '{d['sub']}' ({d['category']}) Rp {d['amount']:,} "
+            f"muncul {d['occurrences']}x — total Rp {d['total_impact']:,}. Konfirmasi apakah dobel input."
+        )
+
+    for a in (fin.get('price_anomalies') or [])[:5]:
+        direction = "lebih rendah" if a['gap_pct'] < 0 else "lebih tinggi"
+        warnings.append(
+            f"Harga '{a['product']}' avg Rp {a['avg_price']:,} — "
+            f"{abs(a['gap_pct'])}% {direction} dari master Rp {a['master_price']:,}. "
+            f"Cek promo POS atau update master."
+        )
+
+    if fin.get('unmatched_products'):
+        unmatched = ', '.join(fin['unmatched_products'])
+        warnings.append(
+            f"Produk tidak match master menu (HPP tidak dihitung): {unmatched}. "
+            f"Laba kotor & margin di atas mengabaikan produk ini."
+        )
+
+    return warnings
+
+
+def _save_report(tanggal_iso, fin, classification, analysis, html, bep_info, situation):
     report_data = {
-        'tanggal':                   tanggal_iso,
-        'revenue':                   fin['revenue'],
-        'hpp':                       fin['hpp'],
-        'gross_profit':              fin['gross_profit'],
-        'expenses':                  fin['expenses'],
-        'net_cash_flow':             fin['net_cash_flow'],
+        'tanggal': tanggal_iso,
+        'revenue': fin['revenue'],
+        'hpp': fin['hpp'],
+        'gross_profit': fin['gross_profit'],
+        'expenses': fin['expenses'],
+        'net_cash_flow': fin['net_cash_flow'],
         'sales_revenue_from_detail': fin['sales_revenue_from_detail'],
-        'qty_median':                fin['qty_median'],
-        'margin_median':             fin['margin_median'],
+        'qty_median': fin['qty_median'],
+        'margin_median': fin['margin_median'],
         'classification': {
             k: [{'product': p['product'], 'qty': p['qty'], 'margin': p['margin']} for p in v]
             for k, v in classification.items() if v
         },
+        'unmatched_products': fin.get('unmatched_products', []),
+        'price_anomalies': fin.get('price_anomalies', []),
+        'bep_revenue': bep_info['bep'],
+        'situation': situation,
+        'attach_rate': fin.get('attach_rate', 0),
+        'hpp_ratio': bep_info['hpp_ratio'],
     }
 
     menus_detail = [
         {
-            'product':      p['product'],
+            'product': p['product'],
             'matched_name': p.get('matched_name'),
-            'category':     p.get('category'),
-            'qty':          p['qty'],
-            'revenue':      p['revenue'],
-            'hpp_unit':     p.get('hpp_unit'),
-            'cogs':         p.get('cogs'),
-            'margin':       p.get('margin'),
-            'margin_pct':   p.get('margin_pct'),
+            'category': p.get('category'),
+            'qty': p['qty'],
+            'revenue': p['revenue'],
+            'hpp_unit': p.get('hpp_unit'),
+            'cogs': p.get('cogs'),
+            'margin': p.get('margin'),
+            'margin_pct': p.get('margin_pct'),
         }
         for p in fin['per_menu']
     ]
@@ -215,8 +275,8 @@ def _save_report(tanggal_iso, fin, classification, analysis, html):
         for item in data['items']:
             expenses_detail.append({
                 'category': cat,
-                'sub':      item['sub'],
-                'amount':   item['amount'],
+                'sub': item['sub'],
+                'amount': item['amount'],
             })
 
     report_row = db.insert_report_transaction(

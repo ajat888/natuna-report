@@ -3,91 +3,271 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Laporan Eksekutif - Natuna Cafè & Resto</title>
+<title>Laporan Eksekutif - Natuna Café & Resto</title>
 <style>
   :root {
-    --primary: #1e293b;
+    --primary: #0f172a;
     --secondary: #475569;
+    --muted: #94a3b8;
     --border: #e2e8f0;
     --bg: #f8fafc;
     --success: #15803d;
+    --success-bg: #dcfce7;
     --danger: #b91c1c;
+    --danger-bg: #fee2e2;
     --warning: #b45309;
+    --warning-bg: #fef3c7;
     --info: #0369a1;
+    --info-bg: #e0f2fe;
   }
   * { box-sizing: border-box; }
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    margin: 0; padding: 16px; color: var(--primary); background-color: var(--bg); font-size: 14px; line-height: 1.6;
+    margin: 0; padding: 16px; color: var(--primary); background: var(--bg);
+    font-size: 14px; line-height: 1.55;
   }
-  .header { text-align: center; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid var(--primary); }
-  .header h1 { font-size: 20px; margin: 0 0 8px 0; text-transform: uppercase; letter-spacing: 1px; }
+  .header { text-align: center; margin-bottom: 20px; padding-bottom: 14px; border-bottom: 2px solid var(--primary); }
+  .header h1 { font-size: 20px; margin: 0 0 6px 0; text-transform: uppercase; letter-spacing: 1px; }
   .header p { margin: 0; color: var(--secondary); font-size: 13px; }
-  
-  .card-summary { background: #ffffff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
-  .summary-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed var(--border); }
+
+  .warning-banner {
+    background: var(--warning-bg); border: 1px solid #f59e0b;
+    border-left: 4px solid var(--warning); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 20px; font-size: 12.5px;
+  }
+  .warning-banner h3 {
+    margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: #92400e;
+  }
+  .warning-banner ul { margin: 0; padding-left: 18px; color: #78350f; }
+  .warning-banner li { margin-bottom: 4px; }
+
+  .exec-summary {
+    background: #fff; border: 1px solid var(--border); border-radius: 10px;
+    padding: 20px; margin-bottom: 24px; box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+  }
+  .exec-status {
+    display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap;
+  }
+  .status-badge {
+    display: inline-block; padding: 4px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .status-badge.sehat { background: var(--success-bg); color: var(--success); }
+  .status-badge.kritis { background: var(--danger-bg); color: var(--danger); }
+  .status-badge.hpp { background: var(--warning-bg); color: var(--warning); }
+  .status-badge.traffic { background: var(--info-bg); color: var(--info); }
+  .status-badge.cost { background: #ffedd5; color: #c2410c; }
+  .status-badge.marginal { background: #f1f5f9; color: #475569; }
+  .status-kondisi {
+    display: inline-block; padding: 4px 12px; border-radius: 6px;
+    font-size: 11px; font-weight: bold; text-transform: uppercase;
+  }
+  .status-kondisi.rugi { background: var(--danger-bg); color: var(--danger); }
+  .status-kondisi.untung { background: var(--success-bg); color: var(--success); }
+
+  .exec-headline {
+    font-size: 15px; font-weight: 600; margin: 0 0 16px 0; color: var(--primary);
+    padding: 12px 14px; background: #f8fafc; border-radius: 6px; border-left: 3px solid var(--primary);
+  }
+
+  .bep-block { margin-bottom: 16px; }
+  .bep-info {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    font-size: 12.5px; color: var(--secondary); margin-bottom: 6px;
+  }
+  .bep-info strong { color: var(--primary); font-weight: 600; }
+  .bep-info .under { color: var(--danger); font-weight: 600; }
+  .bep-info .over { color: var(--success); font-weight: 600; }
+  .bep-progress {
+    height: 10px; background: #e2e8f0; border-radius: 5px; overflow: hidden;
+  }
+  .bep-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #ef4444 0%, #f59e0b 60%, #15803d 100%);
+    border-radius: 5px;
+  }
+
+  .aksi-utama { border-top: 1px solid var(--border); padding-top: 12px; }
+  .aksi-utama h3 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px;
+    color: var(--secondary); margin: 0 0 8px 0;
+  }
+  .aksi-utama ol { margin: 0; padding-left: 20px; }
+  .aksi-utama ol li { margin-bottom: 6px; font-size: 13.5px; color: var(--primary); }
+
+  h2 {
+    font-size: 14px; color: var(--primary); margin: 24px 0 12px 0;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+
+  .card-summary {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 20px;
+  }
+  .summary-row {
+    display: flex; justify-content: space-between; padding: 8px 0;
+    border-bottom: 1px dashed var(--border); font-size: 13.5px;
+  }
   .summary-row:last-child { border-bottom: none; }
-  .summary-row.total { font-weight: bold; font-size: 15px; padding-top: 12px; }
+  .summary-row.total { font-weight: bold; font-size: 14.5px; padding-top: 10px; }
   .val-success { color: var(--success); }
   .val-danger { color: var(--danger); }
 
-  h2 { font-size: 15px; color: var(--primary); margin: 24px 0 12px 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); text-transform: uppercase; letter-spacing: 0.5px; }
-
-  .table-responsive { width: 100%; overflow-x: auto; background: #fff; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 24px; }
-  table { width: 100%; border-collapse: collapse; table-layout: auto; }
-  th, td { padding: 10px 8px; font-size: 13px; border-bottom: 1px solid var(--border); word-wrap: break-word; vertical-align: middle; }
-  th:first-child, td:first-child { width: 45%; } /* Kolom nama menu lebih lebar */
+  .table-responsive {
+    width: 100%; overflow-x: auto; background: #fff;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 20px;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th, td {
+    padding: 9px 10px; font-size: 12.5px;
+    border-bottom: 1px solid var(--border); vertical-align: middle;
+  }
+  th {
+    background: #f8fafc; text-align: left; font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.5px; color: var(--secondary);
+  }
   .text-right { text-align: right; white-space: nowrap; }
   .fw-bold { font-weight: bold; }
   .row-total { background: #f8fafc; font-weight: bold; }
-  .cat-row { background: #f8fafc; font-weight: bold; font-size: 12px; color: var(--secondary); }
+  .cat-row { background: #f8fafc; font-weight: bold; font-size: 11.5px; color: var(--secondary); }
   .warn { color: var(--warning); }
   .err { color: var(--danger); }
 
-  .analysis-box { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
-  .analysis-title { font-weight: bold; font-size: 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-  .analysis-list { margin: 0; padding-left: 20px; color: var(--secondary); }
+  .analysis-box {
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .analysis-title {
+    font-weight: bold; font-size: 13px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .analysis-list { margin: 0; padding-left: 20px; color: var(--secondary); font-size: 13px; }
   .analysis-list li { margin-bottom: 10px; }
   .analysis-list strong { color: var(--primary); }
-  
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; text-transform: uppercase; }
-  .badge-blue { background: #e0f2fe; color: #0369a1; }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 10.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.4px;
+  }
+  .badge-blue { background: var(--info-bg); color: var(--info); }
   .badge-orange { background: #ffedd5; color: #c2410c; }
-  .badge-green { background: #dcfce7; color: #15803d; }
-  .badge-red { background: #fee2e2; color: #b91c1c; }
+  .badge-green { background: var(--success-bg); color: var(--success); }
+  .badge-red { background: var(--danger-bg); color: var(--danger); }
   .badge-gray { background: #f1f5f9; color: #475569; }
 
-  .footer-note { font-size: 11px; color: #64748b; text-align: center; margin-top: 30px; }
+  .footer-note {
+    font-size: 11px; color: var(--muted); text-align: center;
+    margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border);
+  }
 </style>
 </head>
 <body>
 
 <div class="header">
   <h1>Laporan Eksekutif Harian</h1>
-  <p>Natuna Café & Resto | Periode: {{ tanggal_panjang }}</p>
+  <p>Natuna Café & Resto | {{ hari }}, {{ tanggal_panjang }}</p>
 </div>
 
+{% if warnings %}
+<div class="warning-banner">
+  <h3>⚠ Data Quality Warning — Baca Sebelum Angka</h3>
+  <ul>
+    {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+<div class="exec-summary">
+  <div class="exec-status">
+    <span class="status-badge {{ situation_class }}">{{ situation_label }}</span>
+    <span class="status-kondisi {% if analysis.kondisi == 'Rugi' %}rugi{% else %}untung{% endif %}">
+      {% if analysis.kondisi == 'Rugi' %}Rugi{% else %}Untung{% endif %}
+    </span>
+  </div>
+
+  <p class="exec-headline">{{ analysis.headline }}</p>
+
+  <div class="bep-block">
+    <div class="bep-info">
+      <span>Revenue: <strong>{{ fin.revenue|rupiah }}</strong></span>
+      <span>BEP: <strong>{{ bep_info.bep|rupiah }}</strong></span>
+      <span class="{% if bep_info.gap < 0 %}under{% else %}over{% endif %}">
+        {% if bep_info.gap < 0 %}Di bawah BEP{% else %}Di atas BEP{% endif %}:
+        {{ bep_info.gap|rupiah }} ({{ bep_info.gap_pct }}%)
+      </span>
+    </div>
+    {% set bep_pct = (fin.revenue / bep_info.bep * 100) if bep_info.bep > 0 else 0 %}
+    {% set bep_bar = bep_pct if bep_pct <= 100 else 100 %}
+    <div class="bep-progress">
+      <div class="bep-fill" style="width: {{ '%.1f'|format(bep_bar) }}%"></div>
+    </div>
+  </div>
+
+  <div class="aksi-utama">
+    <h3>3 Aksi Utama Besok</h3>
+    <ol>
+      {% for item in analysis.instruksi[:3] %}
+      <li>{{ item.aksi }}</li>
+      {% endfor %}
+    </ol>
+  </div>
+</div>
+
+<h2>Ringkasan Keuangan</h2>
 <div class="card-summary">
   <div class="summary-row">
     <span>Total Pendapatan (Revenue)</span>
     <span class="fw-bold">{{ fin.revenue|rupiah }}</span>
   </div>
   <div class="summary-row">
-    <span>Harga Pokok Penjualan (HPP)</span>
+    <span>HPP ({{ (bep_info.hpp_ratio * 100)|round(1) }}% dari Revenue)</span>
     <span class="fw-bold val-danger">{{ fin.hpp|rp_neg }}</span>
   </div>
   <div class="summary-row total">
-    <span>Laba Kotor (Gross Profit)</span>
+    <span>Laba Kotor</span>
     <span class="val-success">{{ fin.gross_profit|rupiah }}</span>
   </div>
-  <div class="summary-row" style="margin-top: 8px;">
-    <span>Beban Operasional Harian</span>
+  <div class="summary-row">
+    <span>Beban Operasional</span>
     <span class="fw-bold val-danger">{{ fin.expenses|rp_neg }}</span>
   </div>
-  <div class="summary-row total" style="color:{% if fin.net_cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
-    <span>Arus Kas Bersih (Net Cash Flow)</span>
+  <div class="summary-row total" style="color: {% if fin.net_cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
+    <span>Net Cash Flow</span>
     <span>{{ fin.net_cash_flow|rp_neg }}</span>
   </div>
+  <div class="summary-row" style="border-top: 1px solid var(--border); margin-top: 8px;">
+    <span>Attach Rate Minuman/Makanan</span>
+    <span class="fw-bold">{{ (fin.attach_rate * 100)|round(1) }}%</span>
+  </div>
+</div>
+
+<h2>Diagnosis & Strategi</h2>
+<div class="analysis-box" style="border-left: 4px solid {% if analysis.kondisi == 'Rugi' %}var(--danger){% else %}var(--success){% endif %};">
+  <div class="analysis-title">
+    <span class="badge {% if analysis.kondisi == 'Rugi' %}badge-red{% else %}badge-green{% endif %}">Diagnosis</span>
+  </div>
+  <p style="font-size: 13.5px; margin: 0 0 16px 0; color: var(--primary);">{{ analysis.diagnosis }}</p>
+
+  <div class="analysis-title">
+    <span class="badge badge-blue">Action Plan Lengkap</span>
+  </div>
+  <ul class="analysis-list">
+    {% for item in analysis.instruksi %}
+    <li>
+      <strong>{{ loop.index }}. {{ item.aksi }}</strong><br>
+      <span style="color: #64748b; font-size: 12px;"><em>Kenapa: {{ item.alasan }}</em></span>
+    </li>
+    {% endfor %}
+  </ul>
+
+  <div class="analysis-title" style="margin-top: 16px;">
+    <span class="badge badge-green">Insight Konsultan</span>
+  </div>
+  <p style="color: var(--secondary); font-size: 12.5px; line-height: 1.6; background: #f8fafc; padding: 12px; border-radius: 6px; margin: 0;">
+    {{ analysis.strategi }}
+  </p>
 </div>
 
 <h2>Rincian Penjualan & Laba Kotor</h2>
@@ -96,9 +276,9 @@
     <thead>
       <tr>
         <th style="width:40%;">Menu / Produk</th>
-        <th class="text-right" style="width:15%;">Qty</th>
-        <th class="text-right" style="width:20%;">Pendapatan</th>
-        <th class="text-right" style="width:25%;">Laba Kotor</th>
+        <th class="text-right">Qty</th>
+        <th class="text-right">Pendapatan</th>
+        <th class="text-right">Laba Kotor</th>
       </tr>
     </thead>
     <tbody>
@@ -107,11 +287,11 @@
         {% set _ = cats.setdefault(p.category, []).append(p) %}
       {% endfor %}
       {% for cat, items in cats.items() %}
-        <tr><td colspan="4" class="cat-row">KATEGORI: {{ cat|upper }}</td></tr>
+        <tr><td colspan="4" class="cat-row">{{ cat|upper }}</td></tr>
         {% for p in items %}
           <tr>
             <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
-              <br><small style="color:#94a3b8;">→ {{ p.matched_name }}</small>{% endif %}</td>
+              <br><small style="color:var(--muted);">→ {{ p.matched_name }}</small>{% endif %}</td>
             <td class="text-right">{{ p.qty }}</td>
             <td class="text-right">{{ p.revenue|rupiah }}</td>
             <td class="text-right {% if p.margin is none %}warn{% elif p.margin < 0 %}err{% else %}val-success{% endif %}">
@@ -121,7 +301,7 @@
         {% endfor %}
       {% endfor %}
       <tr class="row-total">
-        <td>TOTAL KESELURUHAN</td>
+        <td>TOTAL</td>
         <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
         <td class="text-right">{{ fin.revenue|rupiah }}</td>
         <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
@@ -135,8 +315,8 @@
   <table>
     <thead>
       <tr>
-        <th style="width:60%;">Deskripsi Pengeluaran</th>
-        <th class="text-right" style="width:40%;">Nominal</th>
+        <th style="width:60%;">Deskripsi</th>
+        <th class="text-right">Nominal</th>
       </tr>
     </thead>
     <tbody>
@@ -150,25 +330,12 @@
         {% endfor %}
       {% endfor %}
       <tr class="row-total">
-        <td>TOTAL BEBAN OPERASIONAL</td>
+        <td>TOTAL BEBAN</td>
         <td class="text-right val-danger">{{ fin.expenses|rupiah }}</td>
       </tr>
     </tbody>
   </table>
 </div>
-
-{% if fin.unmatched_products %}
-<div class="analysis-box" style="border-color:var(--warning);">
-  <div class="analysis-title">
-    <span class="badge badge-orange">Data Warning</span> Produk tanpa HPP
-  </div>
-  <div style="font-size:12px;color:var(--secondary);">
-    Produk berikut tidak match dengan Daftar Menu: 
-    <strong>{{ fin.unmatched_products|join(', ') }}</strong>. 
-    Laba kotor total dan margin di atas <em>tidak</em> menyertakan produk ini.
-  </div>
-</div>
-{% endif %}
 
 <h2>Klasifikasi Menu (Menu Engineering)</h2>
 <div class="table-responsive">
@@ -176,7 +343,7 @@
     <thead>
       <tr>
         <th style="width:25%;">Kategori</th>
-        <th>Daftar Menu (Qty | Laba Kotor)</th>
+        <th>Daftar Menu (Qty | Laba)</th>
       </tr>
     </thead>
     <tbody>
@@ -184,24 +351,19 @@
         {% if items %}
         <tr>
           <td style="vertical-align: top;">
-            {% if cat == 'Primadona' %}
-              <span class="badge badge-green">⭐ Primadona</span>
-            {% elif cat == 'Volume Tinggi' %}
-              <span class="badge badge-blue">🐴 Volume Tinggi</span>
-            {% elif cat == 'Potensial' %}
-              <span class="badge badge-orange">🧩 Potensial</span>
-            {% elif cat == 'Evaluasi' %}
-              <span class="badge badge-gray">🗑️ Evaluasi</span>
-            {% elif cat == 'Rugi' %}
-              <span class="badge badge-red">🩸 Rugi</span>
+            {% if cat == 'Primadona' %}<span class="badge badge-green">⭐ Primadona</span>
+            {% elif cat == 'Volume Tinggi' %}<span class="badge badge-blue">🐴 Volume Tinggi</span>
+            {% elif cat == 'Potensial' %}<span class="badge badge-orange">🧩 Potensial</span>
+            {% elif cat == 'Evaluasi' %}<span class="badge badge-gray">🗑️ Evaluasi</span>
+            {% elif cat == 'Rugi' %}<span class="badge badge-red">🩸 Rugi</span>
             {% endif %}
           </td>
           <td>
             {% for item in items %}
-              <div style="margin-bottom: 6px;">
-                <strong>{{ item.product }}</strong> 
-                <span style="color: var(--secondary); font-size: 12px;">
-                  (Qty: {{ item.qty }} | Laba: {{ item.margin|rupiah }})
+              <div style="margin-bottom: 4px;">
+                <strong>{{ item.product }}</strong>
+                <span style="color: var(--secondary); font-size: 11.5px;">
+                  (Qty {{ item.qty }} | Laba {{ item.margin|rupiah }})
                 </span>
               </div>
             {% endfor %}
@@ -213,45 +375,9 @@
   </table>
 </div>
 
-<h2>Analisa Kinerja & Rekomendasi Strategis</h2>
-
-<div class="analysis-box" style="border-left: 4px solid {% if analysis.kondisi == 'Rugi' %}var(--danger){% else %}var(--success){% endif %};">
-  
-  <div class="analysis-title">
-    <span class="badge {% if analysis.kondisi == 'Rugi' %}badge-red{% else %}badge-green{% endif %}">
-      {% if analysis.kondisi == 'Rugi' %}🔴 KONDISI: RUGI{% else %}🟢 KONDISI: UNTUNG{% endif %}
-    </span> Diagnosis Cepat
-  </div>
-  <p style="font-weight: 500; font-size: 14px; margin-bottom: 20px; color: var(--primary);">
-    {{ analysis.diagnosis }}
-  </p>
-
-  <div class="analysis-title">
-    <span class="badge badge-blue">Action Plan</span> Instruksi Taktis Besok
-  </div>
-  <ul class="analysis-list" style="margin-bottom: 24px;">
-    {% for item in analysis.instruksi %}
-    <li>
-      <strong>{{ item.aksi }}</strong> <br> 
-      <span style="color: #64748b; font-size: 12px; margin-top: 4px; display: inline-block;">
-        <em>Kenapa? {{ item.alasan }}</em>
-      </span>
-    </li>
-    {% endfor %}
-  </ul>
-
-  <div class="analysis-title">
-    <span class="badge badge-green">Insight Konsultan</span> Strategi & Edukasi
-  </div>
-  <p style="color: var(--secondary); font-size: 13px; line-height: 1.6; background: #f8fafc; padding: 12px; border-radius: 6px;">
-    {{ analysis.strategi }}
-  </p>
-  
-</div>
-
 <div class="footer-note">
-  Laporan ini dihasilkan secara otomatis oleh Sistem Informasi Manajemen Natuna Café & Resto.<br>
-  Dokumen bersifat rahasia dan hanya untuk kalangan internal manajemen.
+  Laporan otomatis Sistem Informasi Manajemen Natuna Café & Resto.<br>
+  Dokumen rahasia — hanya untuk kalangan internal manajemen.
 </div>
 
 </body>

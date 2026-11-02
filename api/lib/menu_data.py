@@ -1,6 +1,4 @@
-# Data master menu dan HPP Natuna Cafe & Resto
 MENU_DATA = [
-    # MAKANAN
     {"category": "Makanan", "name": "Ayam Bakar", "variant": "-", "full_name": "Ayam Bakar", "price": 29000, "hpp": 21500},
     {"category": "Makanan", "name": "Ayam Bakar", "variant": "Tanpa Nasi", "full_name": "Ayam Bakar Tanpa Nasi", "price": 24000, "hpp": 18500},
     {"category": "Makanan", "name": "Ayam Penyet", "variant": "-", "full_name": "Ayam Penyet", "price": 29000, "hpp": 22500},
@@ -35,8 +33,6 @@ MENU_DATA = [
     {"category": "Makanan", "name": "Capcai", "variant": "-", "full_name": "Capcai", "price": 30000, "hpp": 19000},
     {"category": "Makanan", "name": "Cha Kangkung", "variant": "-", "full_name": "Cha Kangkung", "price": 20000, "hpp": 8000},
     {"category": "Makanan", "name": "Sayur Asam", "variant": "-", "full_name": "Sayur Asam", "price": 20000, "hpp": 9000},
-
-    # BERKUAH, MIE & IKAN
     {"category": "Berkuah/Mie", "name": "Sup Tulang Iga+Nasi", "variant": "-", "full_name": "Sup Tulang Iga", "price": 55000, "hpp": 43000},
     {"category": "Berkuah/Mie", "name": "Sup Tulang Iga", "variant": "Tanpa Nasi", "full_name": "Sup Tulang Iga Tanpa Nasi", "price": 50000, "hpp": 40000},
     {"category": "Berkuah/Mie", "name": "Bakso", "variant": "Urat", "full_name": "Bakso Urat", "price": 20000, "hpp": 14500},
@@ -58,15 +54,11 @@ MENU_DATA = [
     {"category": "Ikan", "name": "Nila Asam Pedas Manis", "variant": "Ukuran Besar", "full_name": "Nila P. Manis Besar", "price": 60000, "hpp": 32000},
     {"category": "Ikan", "name": "Nila Asam Pedas", "variant": "Ukuran Kecil", "full_name": "Nila Asam P. Kecil", "price": 50000, "hpp": 32000},
     {"category": "Ikan", "name": "Nila Asam Pedas", "variant": "Ukuran Besar", "full_name": "Nila Asam P. Besar", "price": 60000, "hpp": 32000},
-
-    # SNACK / WESTERN
     {"category": "Snack", "name": "Roti John", "variant": "-", "full_name": "Roti John", "price": 20000, "hpp": 11000},
     {"category": "Snack", "name": "Burger", "variant": "Original", "full_name": "Burger Original", "price": 15000, "hpp": 12000},
     {"category": "Snack", "name": "Burger", "variant": "Krispy", "full_name": "Burger Krispy", "price": 20000, "hpp": 12000},
     {"category": "Snack", "name": "Kentang Goreng", "variant": "-", "full_name": "Kentang Goreng", "price": 15000, "hpp": 7000},
     {"category": "Snack", "name": "Sosis Goreng", "variant": "-", "full_name": "Sosis Goreng", "price": 15000, "hpp": 8000},
-
-    # MINUMAN DINGIN
     {"category": "Minuman Dingin", "name": "Rainbow Soda", "variant": "-", "full_name": "Rainbow Soda", "price": 15000, "hpp": 6500},
     {"category": "Minuman Dingin", "name": "Blue Ocean", "variant": "-", "full_name": "Blue Ocean", "price": 15000, "hpp": 5500},
     {"category": "Minuman Dingin", "name": "Orange Yakult", "variant": "-", "full_name": "Orange Yakult", "price": 15000, "hpp": 7000},
@@ -86,39 +78,33 @@ MENU_DATA = [
     {"category": "Minuman Dingin", "name": "Teh", "variant": "-", "full_name": "Teh Es", "price": 6000, "hpp": 4500},
     {"category": "Minuman Dingin", "name": "Cappucino Es", "variant": "-", "full_name": "Cappucino Es", "price": 10000, "hpp": 4500},
     {"category": "Minuman Dingin", "name": "Milo Es", "variant": "-", "full_name": "Milo Es", "price": 10000, "hpp": 5500},
-
-    # MINUMAN PANAS
+    {"category": "Minuman Dingin", "name": "Kopi Susu Es", "variant": "-", "full_name": "Kopi Susu Es", "price": 10000, "hpp": 5500},
+    {"category": "Minuman Dingin", "name": "Kopi Es", "variant": "-", "full_name": "Kopi Es", "price": 10000, "hpp": 4500},
+    {"category": "Minuman Dingin", "name": "Kopi Susu", "variant": "Gelas Besar", "full_name": "Kopi Susu Gelas Besar", "price": 10000, "hpp": 5500},
     {"category": "Minuman Panas", "name": "Chocolatos Coklat Panas", "variant": "-", "full_name": "Chocolatos Coklat Panas", "price": 8000, "hpp": 4500},
     {"category": "Minuman Panas", "name": "Cappucino Panas", "variant": "-", "full_name": "Cappucino Panas", "price": 8000, "hpp": 4500},
     {"category": "Minuman Panas", "name": "Kopi Susu Panas", "variant": "-", "full_name": "Kopi Susu Panas", "price": 8000, "hpp": 5000},
     {"category": "Minuman Panas", "name": "Kopi Panas", "variant": "-", "full_name": "Kopi Panas", "price": 7000, "hpp": 4500},
     {"category": "Minuman Panas", "name": "Susu Panas", "variant": "-", "full_name": "Susu Panas", "price": 7000, "hpp": 4500},
     {"category": "Minuman Panas", "name": "Teh Panas", "variant": "-", "full_name": "Teh Panas", "price": 6000, "hpp": 4500},
-
-    # TAMBAHAN
+    {"category": "Minuman Panas", "name": "Milo", "variant": "Hangat", "full_name": "Milo Panas", "price": 10000, "hpp": 5500},
     {"category": "Tambahan", "name": "Telur Dadar", "variant": "-", "full_name": "Telur Dadar", "price": 10000, "hpp": 3000},
     {"category": "Tambahan", "name": "Kremesan", "variant": "-", "full_name": "Kremesan", "price": 10000, "hpp": 4000},
     {"category": "Tambahan", "name": "Sambal Bawang", "variant": "-", "full_name": "Sambal Bawang", "price": 5000, "hpp": 3000},
     {"category": "Tambahan", "name": "Nasi", "variant": "-", "full_name": "Nasi", "price": 6000, "hpp": 3000},
     {"category": "Tambahan", "name": "Nasi Bakul", "variant": "-", "full_name": "Nasi Bakul", "price": 25000, "hpp": 15000},
-    {"category": "Tambahan", "name": "Nasi 1/2", "variant": "-", "full_name": "nasi 1/2", "price": 3000, "hpp": 1500},
-
-    # PAKET
+    {"category": "Tambahan", "name": "Nasi 1/2", "variant": "-", "full_name": "Nasi 1/2", "price": 3000, "hpp": 1500},
     {"category": "Paket", "name": "Paket Komplit", "variant": "-", "full_name": "paket komplit", "price": 250000, "hpp": 144000},
     {"category": "Paket", "name": "Paket Keluarga", "variant": "-", "full_name": "Paket Keluarga", "price": 200000, "hpp": 125000},
     {"category": "Paket", "name": "Paket Shell Out Seafood", "variant": "-", "full_name": "Shell Out Seafood (baru )", "price": 250000, "hpp": 145000},
     {"category": "Paket", "name": "Paket Kepiting Saos Padang", "variant": "-", "full_name": "Kepiting Saos Padang", "price": 100000, "hpp": 60000},
-
-    # LAIN-LAIN
     {"category": "Lainnya", "name": "Mineral", "variant": "-", "full_name": "mineral", "price": 5000, "hpp": 3000},
     {"category": "Lainnya", "name": "Air Mineral", "variant": "-", "full_name": "air mineral", "price": 5000, "hpp": 3000},
-    {"category": "Lainnya", "name": "Es Batu", "variant": "-", "full_name": "es batu", "price": 2000, "hpp": 500},
-    {"category": "Lainnya", "name": "Es Kosong", "variant": "-", "full_name": "es kosong", "price": 2000, "hpp": 500},
+    {"category": "Lainnya", "name": "Es Batu", "variant": "-", "full_name": "Es Batu", "price": 2000, "hpp": 500},
+    {"category": "Lainnya", "name": "Es Kosong", "variant": "-", "full_name": "Es Kosong", "price": 2000, "hpp": 500},
 ]
 
-# Kamus untuk memetakan nama di POS (kiri) ke nama di Daftar Menu (kanan)
 ALIAS_MAP = {
-    # Varian Tanpa Nasi (dari gambar POS)
     "ayam bakar la x": "Ayam Bakar Lalapan Tanpa Nasi",
     "ayam bakar x": "Ayam Bakar Tanpa Nasi",
     "ayam goreng la x": "Ayam Goreng Lalapan Tanpa Nasi",
@@ -130,15 +116,18 @@ ALIAS_MAP = {
     "steak b.pepper x": "Steak Ayam BlackPepper Tanpa Nasi",
     "steak original x": "Steak Ayam Original Tanpa Nasi",
     "sup tulang iga x": "Sup Tulang Iga Tanpa Nasi",
-
-    # Alias Reguler (dari POS)
     "steak original": "Steak Ayam Original",
     "steak blackpepper": "Steak Ayam BlackPepper",
+    "steak b.pepper": "Steak Ayam BlackPepper",
     "milo es": "Milo Es",
     "ayam bakar la.": "Ayam Bakar Lalapan",
+    "ayam bakar la": "Ayam Bakar Lalapan",
     "ayam goreng la.": "Ayam Goreng Lalapan",
+    "ayam goreng la": "Ayam Goreng Lalapan",
     "geprek s. bawang": "Geprek Sambal Bawang",
     "ayam kremes": "Ayam Kremes",
+    "ayamkremes": "Ayam Kremes",
+    "ayam kremes x": "Ayam Kremes",
     "nila bakar besar": "Nila Bakar Besar",
     "nila bakar kecil": "Nila Bakar Kecil",
     "nila asam p. kecil": "Nila Asam P. Kecil",
@@ -149,11 +138,14 @@ ALIAS_MAP = {
     "sup tulang iga+nasi": "Sup Tulang Iga",
     "nasgor telur": "NasGor Telur",
     "nasgor ayam": "NasGor Ayam",
+    "nasgor ayam 1/2": "NasGor Ayam",
+    "nasgor ayam geprek": "NasGor Ayam",
     "nasgor spesial": "NasGor Spesial",
     "capucino es": "Cappucino Es",
     "cappucino es": "Cappucino Es",
     "capucino panas": "Cappucino Panas",
     "cappucino panas": "Cappucino Panas",
+    "capucino hangat": "Cappucino Panas",
     "teh hangat": "Teh Panas",
     "teh panas": "Teh Panas",
     "teh es": "Teh Es",
@@ -161,12 +153,23 @@ ALIAS_MAP = {
     "tehes": "Teh Es",
     "esteh": "Teh Es",
     "milo latte": "Milo Latte",
-    "milo panas": "Milo Latte",
-
-    # Perbaikan Bug (Item di luar alias sebelumnya)
-    "es batu": "es batu",
-    "es  batu": "es batu",
-    "es kosong": "es kosong",
-    "cincau es": "Cincau Susu", # POS nulisnya cincau es, padahal di menu Cincau Susu
-    "lemon es": "Lemon Tea",   # POS nulisnya lemon es, padahal di menu Lemon Tea
+    "milo panas": "Milo Panas",
+    "milo hangat": "Milo Panas",
+    "es batu": "Es Batu",
+    "es  batu": "Es Batu",
+    "es batu kosong": "Es Batu",
+    "es kosong": "Es Kosong",
+    "es tawar": "Es Kosong",
+    "es tawar gelas": "Es Kosong",
+    "es cincau": "Cincau Susu",
+    "cincau es": "Cincau Susu",
+    "lemon es": "Lemon Tea",
+    "lemon tea hangat": "Lemon Tea",
+    "lemontie hangat": "Lemon Tea",
+    "mineral gelas": "mineral",
+    "kopi susu gelas besar": "Kopi Susu Gelas Besar",
+    "kopi susu es": "Kopi Susu Es",
+    "kopi es": "Kopi Es",
+    "susu hangat": "Susu Panas",
+    "nasi 1/2": "Nasi 1/2",
 }
