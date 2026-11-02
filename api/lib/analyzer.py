@@ -50,7 +50,7 @@ SYSTEM_PROMPT = (
     "- Jika diagnosis Margin Tipis → aksi HANYA tentang: dorong menu bermargin tinggi, kurangi menu bermargin rendah, sesuaikan campuran menu. "
     "- Jika diagnosis Sehat → aksi HANYA tentang: pengembangan (naikkan margin absolut, perluas pelanggan, promosi terarah), BUKAN pemangkasan darurat. "
     "Jika ada anomali harga atau produk tanpa HPP, boleh disisipkan sebagai SATU aksi tambahan tanpa melanggar aturan di atas. "
-    "Output HARUS berupa JSON yang valid."
+    "HARUS MENGEMBALIKAN OUTPUT BERUPA FORMAT JSON YANG VALID SEPERTI YANG DIMINTA."
 )
 
 
@@ -67,38 +67,53 @@ def _clean(text):
 
 
 def _get_available_models(client):
-    """Mengambil daftar model yang valid dan tersedia di akun Groq pengguna."""
+    """Mengambil daftar model yang valid dan tersedia di akun Groq."""
     try:
         models_response = client.models.list()
         available_ids = [m.id for m in models_response.data]
     except Exception as e:
         print(f"[AI] Gagal mengambil daftar model: {e}. Menggunakan daftar default.")
-        return ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.1-8b-instant"]
+        return ["openai/gpt-oss-120b", "llama3-70b-8192", "llama-3.1-8b-instant"]
 
-    # Urutan prioritas model (paling pintar -> paling ringan)
     preferred_order = [
         "openai/gpt-oss-120b",
         "openai/gpt-oss-20b",
+        "llama3-70b-8192",
+        "llama3-8b-8192",
         "llama-3.3-70b-versatile",
         "llama-3.1-8b-instant",
-        "qwen/qwen3-32b",
-        "gemma2-9b-it"
+        "mixtral-8x7b-32768"
     ]
 
     valid_models = []
-    # 1. Masukkan model prioritas yang memang ada di akun Groq user
     for pm in preferred_order:
         if pm in available_ids:
             valid_models.append(pm)
             
-    # 2. Jika semua model prioritas di atas tidak ada (aneh), ambil semua model teks yang tersedia
     if not valid_models:
         for mid in available_ids:
-            # Abaikan model audio/speech
             if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus']):
                 valid_models.append(mid)
 
     return valid_models
+
+
+def _extract_json(text):
+    """Fungsi sakti untuk mengekstrak JSON dari teks AI (mengabaikan markdown)."""
+    if not text:
+        return None
+    try:
+        # Coba parse langsung jika AI sudah pintar
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Jika gagal, cari blok { ... } dengan regex
+        match = re.search(r'\{.*\}', text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
+    return None
 
 
 def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
@@ -227,12 +242,14 @@ ATURAN TAMBAHAN:
     available_models = _get_available_models(client)
     print(f"[AI] Model yang akan dicoba berurutan: {available_models}")
 
-    resp = None
+    data = None
     last_error = None
 
     for model_name in available_models:
         try:
             print(f"[AI] Mencoba generate dengan model: {model_name}")
+            
+            # PERBAIKAN: Menghapus response_format agar tidak error validasi JSON dari Groq
             resp = client.chat.completions.create(
                 model=model_name,
                 messages=[
@@ -240,11 +257,21 @@ ATURAN TAMBAHAN:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.35,
-                response_format={"type": "json_object"},
                 max_tokens=3000,
             )
-            print(f"[AI] Berhasil menggunakan model: {model_name}")
-            break
+            
+            raw_text = resp.choices[0].message.content
+            parsed_data = _extract_json(raw_text)
+            
+            if parsed_data:
+                data = parsed_data
+                print(f"[AI] Berhasil menggunakan model: {model_name}")
+                break
+            else:
+                print(f"[AI] Model {model_name} gagal menghasilkan JSON yang valid.")
+                last_error = Exception("Gagal parse JSON")
+                continue
+
         except RateLimitError as e:
             print(f"[AI] Model {model_name} kena limit kuota (429). Beralih ke model cadangan...")
             last_error = e
@@ -254,10 +281,8 @@ ATURAN TAMBAHAN:
             last_error = e
             continue
 
-    if resp is None:
-        raise Exception(f"Semua model AI sedang sibuk atau limit kuota. Error terakhir: {last_error}")
-
-    data = json.loads(resp.choices[0].message.content)
+    if data is None:
+        raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
 
     for key in ('headline', 'diagnosis', 'strategi'):
         if data.get(key):
