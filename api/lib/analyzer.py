@@ -191,8 +191,8 @@ ATURAN TAMBAHAN:
 
     models_to_try = [
         "openai/gpt-oss-120b",
-        "llama-3.3-70b-versatile",
-        "llama-3.1-8b-instant"
+        "openai/gpt-oss-20b",
+        "qwen/qwen3-32b"
     ]
 
     resp = None
