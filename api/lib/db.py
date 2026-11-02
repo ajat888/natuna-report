@@ -528,3 +528,10 @@ def invalidate_period_analyses_for_date(tanggal: str) -> int:
         with conn.cursor() as cur:
             cur.execute(sql, (t, t))
             return cur.rowcount
+
+@_wrap_db_errors
+def delete_report_by_date(tanggal: str) -> bool:
+    with _get_pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM reports WHERE tanggal = %s", (_coerce_date(tanggal),))
+            return cur.rowcount > 0

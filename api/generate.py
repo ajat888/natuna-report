@@ -54,7 +54,6 @@ def list_reports():
     except db.DbError as e:
         return jsonify({"error": f"DB error: {e}"}), 500
     except Exception as e:
-        traceback.print_exc()
         return jsonify({"error": str(e)}), 500
 
 
@@ -83,7 +82,27 @@ def get_report(tanggal):
     except db.DbError as e:
         return jsonify({"error": f"DB error: {e}"}), 500
     except Exception as e:
-        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/reports/<tanggal>", methods=["DELETE"])
+def delete_report_route(tanggal):
+    try:
+        datetime.strptime(tanggal, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"error": "Format tanggal harus YYYY-MM-DD"}), 400
+
+    if not os.environ.get("DATABASE_URL"):
+        return jsonify({"error": "DATABASE_URL belum dikonfigurasi"}), 503
+
+    try:
+        deleted = db.delete_report_by_date(tanggal)
+        if deleted:
+            return jsonify({"status": "ok", "message": "Laporan berhasil dihapus"})
+        return jsonify({"error": "Laporan tidak ditemukan"}), 404
+    except db.DbError as e:
+        return jsonify({"error": f"DB error: {e}"}), 500
+    except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 
@@ -100,6 +119,14 @@ def generate_report():
 
         dt = datetime.strptime(tanggal, "%Y-%m-%d")
         tanggal_panjang = f"{dt.day} {BULAN[dt.month-1]} {dt.year}"
+
+        if os.environ.get("DATABASE_URL"):
+            try:
+                existing = db.get_report_by_date(tanggal)
+                if existing:
+                    return jsonify({"error": f"Laporan untuk tanggal {tanggal_panjang} sudah ada di database. Hapus terlebih dahulu jika ingin membuat ulang."}), 409
+            except Exception as e:
+                print(f"Gagal cek duplikat: {e}", file=sys.stderr)
 
         sales_items = parse_sales(penjualan_f, tanggal)
 
@@ -196,7 +223,7 @@ def _save_report(tanggal_iso, fin, classification, analysis, html):
         report_data=report_data,
         menus=menus_detail,
         expenses=expenses_detail,
-        confirm_overwrite=True,
+        confirm_overwrite=False,
     )
 
     db.update_report_analysis(

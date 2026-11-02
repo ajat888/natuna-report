@@ -67,6 +67,12 @@
   #history-table .text-right { text-align: right; }
   #history-table .net-pos { color: #15803d; font-weight: 600; }
   #history-table .net-neg { color: #b91c1c; font-weight: 600; }
+  .btn-del {
+    background: #fee2e2; color: #b91c1c; border: none;
+    padding: 4px 10px; border-radius: 4px; font-weight: 600; cursor: pointer;
+    font-size: 12px; transition: background 0.15s;
+  }
+  .btn-del:hover { background: #fca5a5; }
   .empty-state {
     padding: 32px; text-align: center; color: #94a3b8;
     background: #fff; border: 1px dashed #cbd5e1; border-radius: 6px; font-size: 14px;
@@ -116,7 +122,7 @@
           <th class="text-right">Revenue</th>
           <th class="text-right">Expenses</th>
           <th class="text-right">Net Cash Flow</th>
-          <th></th>
+          <th class="text-right">Aksi</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -156,7 +162,13 @@ f.onsubmit = async (e) => {
 
   try {
     const r = await fetch('/api/generate', { method: 'POST', body: new FormData(f) });
-    const d = await r.json();
+    const text = await r.text();
+    let d;
+    try {
+      d = JSON.parse(text);
+    } catch (e) {
+      throw new Error(`Server error (HTTP ${r.status}).`);
+    }
     if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
 
     lastHtml = d.html;
@@ -219,12 +231,16 @@ async function loadHistory() {
       const netText = rep.net_cash_flow < 0
         ? '(' + formatRp(Math.abs(rep.net_cash_flow)) + ')'
         : formatRp(rep.net_cash_flow);
+      
       tr.innerHTML = `
         <td><strong>${formatTanggal(rep.tanggal)}</strong></td>
         <td class="text-right">${formatRp(rep.revenue)}</td>
         <td class="text-right">${formatRp(rep.expenses)}</td>
         <td class="text-right ${netClass}">${netText}</td>
-        <td class="text-right" style="color:#0369a1;">Lihat →</td>
+        <td class="text-right">
+          <button class="btn-del" onclick="hapusLaporan(event, '${rep.tanggal}')">Hapus</button>
+          <span style="color:#0369a1; margin-left: 8px;">Lihat →</span>
+        </td>
       `;
       tr.onclick = () => openHistoryReport(rep.tanggal);
       tbody.appendChild(tr);
@@ -259,6 +275,30 @@ async function openHistoryReport(tanggal) {
     statusEl.innerHTML = `<span class="ok">✓ Menampilkan laporan ${formatTanggal(tanggal)}</span>`;
   } catch (err) {
     statusEl.innerHTML = `<span class="err">✗ ${err.message}</span>`;
+  }
+}
+
+async function hapusLaporan(e, tanggal) {
+  e.stopPropagation();
+  if (!confirm(`Yakin ingin menghapus laporan tanggal ${formatTanggal(tanggal)}?`)) return;
+  
+  try {
+    const r = await fetch(`/api/reports/${tanggal}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Gagal menghapus laporan');
+    
+    if (lastTanggal === tanggal) {
+      preview.style.display = 'none';
+      actions.style.display = 'none';
+      lastHtml = '';
+      lastTanggal = '';
+      statusEl.innerHTML = '<span style="color:#64748b;">Laporan telah dihapus.</span>';
+    }
+    
+    historyLoaded = false;
+    loadHistory();
+  } catch (err) {
+    alert(err.message);
   }
 }
 
