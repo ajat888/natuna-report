@@ -2,10 +2,9 @@ import os
 import json
 import re
 
-from groq import Groq
+from groq import Groq, RateLimitError
 
 from .learning import format_learning_for_prompt
-
 
 SYSTEM_PROMPT = (
     "Anda adalah Manajer Operasional Restoran sekaligus Konsultan Bisnis F&B yang tegas, cerdas, dan praktis. "
@@ -190,16 +189,40 @@ ATURAN TAMBAHAN:
 - DILARANG menulis kata Inggris dalam nilai JSON (kecuali nama produk/menu dan singkatan HPP).
 """
 
-    resp = client.chat.completions.create(
-        model="openai/gpt-oss-120b",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.35,
-        response_format={"type": "json_object"},
-        max_tokens=3000,
-    )
+    models_to_try = [
+        "openai/gpt-oss-120b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant"
+    ]
+
+    resp = None
+    last_error = None
+
+    for model_name in models_to_try:
+        try:
+            print(f"[AI] Mencoba model: {model_name}")
+            resp = client.chat.completions.create(
+                model=model_name,
+                messages=[
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.35,
+                response_format={"type": "json_object"},
+                max_tokens=3000,
+            )
+            break
+        except RateLimitError as e:
+            print(f"[AI] Model {model_name} kena limit kuota (429). Beralih ke model cadangan...")
+            last_error = e
+            continue
+        except Exception as e:
+            print(f"[AI] Error pada model {model_name}: {e}")
+            last_error = e
+            continue
+
+    if resp is None:
+        raise Exception(f"Semua model AI sedang sibuk atau limit kuota. Error terakhir: {last_error}")
 
     data = json.loads(resp.choices[0].message.content)
 
