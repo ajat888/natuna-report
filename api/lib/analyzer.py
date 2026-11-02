@@ -66,6 +66,41 @@ def _clean(text):
     return text
 
 
+def _get_available_models(client):
+    """Mengambil daftar model yang valid dan tersedia di akun Groq pengguna."""
+    try:
+        models_response = client.models.list()
+        available_ids = [m.id for m in models_response.data]
+    except Exception as e:
+        print(f"[AI] Gagal mengambil daftar model: {e}. Menggunakan daftar default.")
+        return ["openai/gpt-oss-120b", "openai/gpt-oss-20b", "llama-3.1-8b-instant"]
+
+    # Urutan prioritas model (paling pintar -> paling ringan)
+    preferred_order = [
+        "openai/gpt-oss-120b",
+        "openai/gpt-oss-20b",
+        "llama-3.3-70b-versatile",
+        "llama-3.1-8b-instant",
+        "qwen/qwen3-32b",
+        "gemma2-9b-it"
+    ]
+
+    valid_models = []
+    # 1. Masukkan model prioritas yang memang ada di akun Groq user
+    for pm in preferred_order:
+        if pm in available_ids:
+            valid_models.append(pm)
+            
+    # 2. Jika semua model prioritas di atas tidak ada (aneh), ambil semua model teks yang tersedia
+    if not valid_models:
+        for mid in available_ids:
+            # Abaikan model audio/speech
+            if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus']):
+                valid_models.append(mid)
+
+    return valid_models
+
+
 def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
                       bep_info, situation, situation_label, hist_text, learning_ctx):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
@@ -189,18 +224,15 @@ ATURAN TAMBAHAN:
 - DILARANG menulis kata Inggris dalam nilai JSON (kecuali nama produk/menu dan singkatan HPP).
 """
 
-    models_to_try = [
-        "openai/gpt-oss-120b",
-        "openai/gpt-oss-20b",
-        "qwen/qwen3-32b"
-    ]
+    available_models = _get_available_models(client)
+    print(f"[AI] Model yang akan dicoba berurutan: {available_models}")
 
     resp = None
     last_error = None
 
-    for model_name in models_to_try:
+    for model_name in available_models:
         try:
-            print(f"[AI] Mencoba model: {model_name}")
+            print(f"[AI] Mencoba generate dengan model: {model_name}")
             resp = client.chat.completions.create(
                 model=model_name,
                 messages=[
@@ -211,6 +243,7 @@ ATURAN TAMBAHAN:
                 response_format={"type": "json_object"},
                 max_tokens=3000,
             )
+            print(f"[AI] Berhasil menggunakan model: {model_name}")
             break
         except RateLimitError as e:
             print(f"[AI] Model {model_name} kena limit kuota (429). Beralih ke model cadangan...")
