@@ -112,6 +112,7 @@
   }
   .summary-row:last-child { border-bottom: none; }
   .summary-row.total { font-weight: bold; font-size: 14.5px; padding-top: 10px; }
+  .summary-row.sub-note { font-size: 12px; color: var(--muted); font-style: italic; }
   .val-success { color: var(--success); }
   .val-danger { color: var(--danger); }
 
@@ -222,7 +223,7 @@
     <span class="fw-bold">{{ fin.revenue|rupiah }}</span>
   </div>
   <div class="summary-row">
-    <span>HPP ({{ (bep_info.hpp_ratio * 100)|round(1) }}% dari Pendapatan)</span>
+    <span>HPP (bahan terjual) — {{ (bep_info.hpp_ratio * 100)|round(1) }}% dari Pendapatan</span>
     <span class="fw-bold val-danger">{{ fin.hpp|rp_neg }}</span>
   </div>
   <div class="summary-row total">
@@ -230,12 +231,32 @@
     <span class="val-success">{{ fin.gross_profit|rupiah }}</span>
   </div>
   <div class="summary-row">
-    <span>Beban Operasional</span>
+    <span>Beban Non-Bahan (overhead)</span>
+    <span class="fw-bold val-danger">{{ fin.overhead_expenses|rp_neg }}</span>
+  </div>
+  <div class="summary-row total" style="color: {% if fin.operating_profit < 0 %}var(--danger){% else %}var(--success){% endif %};">
+    <span>Laba Operasional</span>
+    <span>{{ fin.operating_profit|rp_neg }}</span>
+  </div>
+  <div class="summary-row sub-note" style="padding-top: 4px; padding-bottom: 4px;">
+    <span>Laba Operasional = Pendapatan − HPP − Beban Non-Bahan. Mengukur untung/rugi sesungguhnya.</span>
+    <span></span>
+  </div>
+  <div class="summary-row" style="border-top: 1px solid var(--border); margin-top: 8px;">
+    <span>Belanja Stok Bahan (info kas)</span>
+    <span class="fw-bold">{{ fin.bahan_purchases|rupiah }}</span>
+  </div>
+  <div class="summary-row">
+    <span>Total Belanja Kas (bahan + non-bahan)</span>
     <span class="fw-bold val-danger">{{ fin.expenses|rp_neg }}</span>
   </div>
-  <div class="summary-row total" style="color: {% if fin.net_cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
-    <span>Arus Kas Bersih</span>
-    <span>{{ fin.net_cash_flow|rp_neg }}</span>
+  <div class="summary-row total" style="color: {% if fin.cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
+    <span>Arus Kas Harian</span>
+    <span>{{ fin.cash_flow|rp_neg }}</span>
+  </div>
+  <div class="summary-row sub-note" style="padding-top: 4px; padding-bottom: 4px;">
+    <span>Arus Kas Harian = Pendapatan − Total Belanja. Mengukur pergerakan uang di kas/bank hari ini.</span>
+    <span></span>
   </div>
   <div class="summary-row" style="border-top: 1px solid var(--border); margin-top: 8px;">
     <span>Rasio Minuman per Makanan</span>
@@ -254,7 +275,7 @@
     <span class="badge badge-blue">Rencana Aksi Lengkap</span>
   </div>
   <ul class="analysis-list">
-    {% for item in analysis.instruksi %}
+    {% for item in analysis.instruksi[:4] %}
     <li>
       <strong>{{ loop.index }}. {{ item.aksi }}</strong><br>
       <span style="color: #64748b; font-size: 12px;"><em>Alasan: {{ item.alasan }}</em></span>

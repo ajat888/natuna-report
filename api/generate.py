@@ -1,4 +1,4 @@
-import os, sys, traceback
+import os, sys, traceback, re
 from datetime import datetime
 from flask import Flask, request, jsonify
 from jinja2 import Environment, FileSystemLoader
@@ -49,18 +49,19 @@ def list_reports():
     try:
         limit = min(max(int(request.args.get("limit", 90)), 1), 365)
         rows = db.list_reports_summary(limit=limit)
-        reports = [
-            {
+        reports = []
+        for r in rows:
+            op = r.get("operating_profit")
+            reports.append({
                 "tanggal": r["tanggal"].isoformat(),
                 "revenue": int(r["revenue"]),
                 "expenses": int(r["expenses"]),
                 "net_cash_flow": int(r["net_cash_flow"]),
-                "bep_revenue": int(r["bep_revenue"] or 0),
+                "operating_profit": int(op) if op is not None else None,
+                "bep_revenue": int(r.get("bep_revenue") or 0),
                 "situation": r.get("situation"),
                 "status": r["status"],
-            }
-            for r in rows
-        ]
+            })
         return jsonify({"reports": reports})
     except db.DbError as e:
         return jsonify({"error": f"DB error: {e}"}), 500
@@ -159,8 +160,8 @@ def generate_report():
         classification = classify_menu(fin['per_menu'], fin['qty_median'], fin['margin_median'])
 
         hist_text, hist_meta = build_historical_context(tanggal, days=7)
-        bep_info = compute_bep(fin, hist_meta.get('avg_expense', 0))
-        situation = classify_situation(fin, bep_info, hist_meta.get('avg_revenue', 0))
+        bep_info = compute_bep(fin, hist_meta.get('avg_overhead', 0))
+        situation = classify_situation(fin, bep_info, hist_meta)
         situation_label = SITUATION_LABELS.get(situation, situation)
         situation_class = SITUATION_CLASSES.get(situation, 'marginal')
 
@@ -197,7 +198,13 @@ def generate_report():
             warning_msg = f"Laporan dibuat, tapi error tak terduga saat menyimpan: {e}"
             print(f"[db] unexpected save error: {e}", file=sys.stderr)
 
-        response = {"html": html, "situation": situation, "bep_revenue": bep_info['bep']}
+        response = {
+            "html": html,
+            "situation": situation,
+            "bep_revenue": bep_info['bep'],
+            "operating_profit": fin['operating_profit'],
+            "cash_flow": fin['cash_flow'],
+        }
         if warnings:
             response["warnings"] = warnings
         if warning_msg:
@@ -246,7 +253,7 @@ def _save_report(tanggal_iso, fin, classification, analysis, html, bep_info, sit
         'hpp': fin['hpp'],
         'gross_profit': fin['gross_profit'],
         'expenses': fin['expenses'],
-        'net_cash_flow': fin['net_cash_flow'],
+        'net_cash_flow': fin['cash_flow'],
         'sales_revenue_from_detail': fin['sales_revenue_from_detail'],
         'qty_median': fin['qty_median'],
         'margin_median': fin['margin_median'],
@@ -260,6 +267,9 @@ def _save_report(tanggal_iso, fin, classification, analysis, html, bep_info, sit
         'situation': situation,
         'attach_rate': fin.get('attach_rate', 0),
         'hpp_ratio': bep_info['hpp_ratio'],
+        'bahan_total': fin['bahan_purchases'],
+        'overhead_total': fin['overhead_expenses'],
+        'operating_profit': fin['operating_profit'],
     }
 
     menus_detail = [

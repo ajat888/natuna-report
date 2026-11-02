@@ -48,6 +48,9 @@ def _ensure_schema():
                 cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS situation text")
                 cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS attach_rate numeric")
                 cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS hpp_ratio numeric")
+                cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS bahan_total bigint")
+                cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS overhead_total bigint")
+                cur.execute("ALTER TABLE reports ADD COLUMN IF NOT EXISTS operating_profit bigint")
         _schema_ready = True
     except Exception:
         pass
@@ -173,7 +176,8 @@ def get_report_detail(tanggal: str) -> dict | None:
 def list_reports_summary(limit: int = 90) -> list[dict]:
     sql = """
         SELECT id, tanggal, revenue, hpp, expenses, net_cash_flow,
-               situation, bep_revenue, status, created_at, updated_at
+               operating_profit, bep_revenue, situation, status,
+               created_at, updated_at
         FROM reports
         ORDER BY tanggal DESC
         LIMIT %s
@@ -215,11 +219,13 @@ def insert_report_transaction(report_data, menus, expenses, confirm_overwrite=Fa
                     hpp, gross_profit, expenses, net_cash_flow,
                     qty_median, margin_median, classification_json,
                     unmatched_products, price_anomalies, bep_revenue,
-                    situation, attach_rate, hpp_ratio, status
+                    situation, attach_rate, hpp_ratio,
+                    bahan_total, overhead_total, operating_profit, status
                 ) VALUES (
                     %s, %s, %s, %s, %s, %s, %s, %s,
                     %s, %s, %s::jsonb, %s::jsonb, %s::jsonb,
-                    %s, %s, %s, %s, 'draft'
+                    %s, %s, %s, %s,
+                    %s, %s, %s, 'draft'
                 )
                 RETURNING id, tanggal, status, created_at, updated_at
                 """,
@@ -241,6 +247,9 @@ def insert_report_transaction(report_data, menus, expenses, confirm_overwrite=Fa
                     report_data.get('situation'),
                     float(report_data.get('attach_rate') or 0),
                     float(report_data.get('hpp_ratio') or 0),
+                    int(report_data.get('bahan_total') or 0),
+                    int(report_data.get('overhead_total') or 0),
+                    int(report_data.get('operating_profit') or 0),
                 ),
             )
             report_row = cur.fetchone()
@@ -573,7 +582,7 @@ def get_revenue_by_dow(from_date, to_date):
         SELECT
             EXTRACT(ISODOW FROM tanggal)::int AS isodow,
             AVG(revenue)::numeric              AS avg_revenue,
-            AVG(net_cash_flow)::numeric        AS avg_net,
+            AVG(COALESCE(operating_profit, net_cash_flow))::numeric AS avg_net,
             COUNT(*)                           AS days
         FROM reports
         WHERE tanggal BETWEEN %s AND %s

@@ -2,6 +2,46 @@ from .matcher import match_menu
 
 FOOD_CATEGORIES = {'Makanan', 'Berkuah/Mie', 'Ikan', 'Snack', 'Paket'}
 
+OVERHEAD_KEYWORDS = [
+    'listrik', 'gas', 'galon', 'nota', 'cup', 'tisu', 'sedotan',
+    'plastik', 'karet', 'spon', 'sikat', 'penyapu', 'pel lantai',
+    'vixal', 'sabun', 'pulpen', 'kertas', 'kresek', 'wow',
+    'pe 15', 'kemasan', 'packaging', 'box', 'bensin', 'transport',
+    'parkir', 'gaji', 'upah', 'sewa', 'internet', 'wifi',
+    'laundry', 'seragam',
+]
+
+
+def _is_overhead_item(sub_text):
+    s = (sub_text or '').lower()
+    return any(kw in s for kw in OVERHEAD_KEYWORDS)
+
+
+def split_expenses(expense_breakdown):
+    bahan_total = 0
+    overhead_total = 0
+    bahan_items = []
+    overhead_items = []
+
+    for cat, data in expense_breakdown.items():
+        for item in data['items']:
+            amt = int(item.get('amount') or 0)
+            if amt <= 0:
+                continue
+            if _is_overhead_item(item.get('sub')):
+                overhead_total += amt
+                overhead_items.append({'category': cat, **item})
+            else:
+                bahan_total += amt
+                bahan_items.append({'category': cat, **item})
+
+    return {
+        'bahan_total': bahan_total,
+        'overhead_total': overhead_total,
+        'bahan_items': bahan_items,
+        'overhead_items': overhead_items,
+    }
+
 
 def calculate_financials(sales_items, menu_list, expenses_breakdown, expenses_total, excel_revenue):
     per_menu = []
@@ -35,8 +75,13 @@ def calculate_financials(sales_items, menu_list, expenses_breakdown, expenses_to
     sales_revenue_from_detail = sum(s['revenue'] for s in sales_items)
     revenue = excel_revenue if excel_revenue > 0 else sales_revenue_from_detail
 
+    split = split_expenses(expenses_breakdown)
+    bahan_purchases = split['bahan_total']
+    overhead_expenses = split['overhead_total']
+
     gross_profit = revenue - total_hpp
-    net_cash_flow = gross_profit - expenses_total
+    operating_profit = gross_profit - overhead_expenses
+    cash_flow = revenue - expenses_total
 
     matched = [p for p in per_menu if p['margin'] is not None]
     if matched:
@@ -54,9 +99,14 @@ def calculate_financials(sales_items, menu_list, expenses_breakdown, expenses_to
         'hpp': total_hpp,
         'gross_profit': gross_profit,
         'expenses': expenses_total,
-        'net_cash_flow': net_cash_flow,
+        'bahan_purchases': bahan_purchases,
+        'overhead_expenses': overhead_expenses,
+        'operating_profit': operating_profit,
+        'cash_flow': cash_flow,
         'per_menu': per_menu,
         'expense_breakdown': expenses_breakdown,
+        'bahan_items': split['bahan_items'],
+        'overhead_items': split['overhead_items'],
         'unmatched_products': unmatched,
         'qty_median': qty_median,
         'margin_median': margin_median,
@@ -65,7 +115,7 @@ def calculate_financials(sales_items, menu_list, expenses_breakdown, expenses_to
     }
 
 
-def detect_price_anomalies(per_menu, menu_list, threshold=0.15):
+def detect_price_anomalies(per_menu, menu_list, threshold=0.15, min_abs_diff=2000):
     master = {m['full_name']: m for m in menu_list}
     anomalies = []
     for p in per_menu:
@@ -75,8 +125,9 @@ def detect_price_anomalies(per_menu, menu_list, threshold=0.15):
         if not m or m['price'] <= 0:
             continue
         avg_price = p['revenue'] / p['qty']
+        abs_diff = abs(avg_price - m['price'])
         gap = (avg_price - m['price']) / m['price']
-        if abs(gap) >= threshold:
+        if abs(gap) >= threshold and abs_diff > min_abs_diff:
             anomalies.append({
                 'product': p['product'],
                 'matched_name': p['matched_name'],
