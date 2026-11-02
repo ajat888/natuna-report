@@ -112,10 +112,8 @@
   }
   .summary-row:last-child { border-bottom: none; }
   .summary-row.total { font-weight: bold; font-size: 15px; padding-top: 12px; }
-  .summary-row.sub-note { font-size: 12px; color: var(--muted); font-style: italic; }
   .val-success { color: var(--success); }
   .val-danger { color: var(--danger); }
-  .divider-title { font-weight: bold; font-size: 12px; color: var(--secondary); margin: 16px 0 8px 0; text-transform: uppercase; }
 
   .table-responsive {
     width: 100%; overflow-x: auto; background: #fff;
@@ -230,24 +228,6 @@
   <div class="summary-row total" style="color: {% if fin.cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
     <span>Kas Bersih (Sisa Uang)</span>
     <span>{{ fin.cash_flow|rp_neg }}</span>
-  </div>
-
-  <div class="divider-title">Catatan Akuntansi (Untuk Pantau HPP)</div>
-  <div class="summary-row">
-    <span>HPP (Bahan yang terjual)</span>
-    <span class="fw-bold val-danger">{{ fin.hpp|rp_neg }}</span>
-  </div>
-  <div class="summary-row">
-    <span>Laba Kotor</span>
-    <span class="val-success">{{ fin.gross_profit|rupiah }}</span>
-  </div>
-  <div class="summary-row">
-    <span>Beban Non-Bahan</span>
-    <span class="fw-bold val-danger">{{ fin.overhead_expenses|rp_neg }}</span>
-  </div>
-  <div class="summary-row" style="color: {% if fin.operating_profit < 0 %}var(--danger){% else %}var(--success){% endif %};">
-    <span>Laba Operasional (Setelah HPP & Beban)</span>
-    <span class="fw-bold">{{ fin.operating_profit|rp_neg }}</span>
   </div>
   <div class="summary-row" style="border-top: 1px solid var(--border); margin-top: 8px;">
     <span>Rasio Minuman per Makanan</span>
