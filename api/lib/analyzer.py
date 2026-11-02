@@ -8,24 +8,35 @@ from .learning import format_learning_for_prompt
 
 SYSTEM_PROMPT = (
     "Anda adalah Manajer Operasional Restoran sekaligus Konsultan Bisnis F&B yang tegas, cerdas, dan praktis. "
-    "Tugas Anda: menganalisa data keuangan harian dan memberikan instruksi taktis (Action Plan) beserta edukasi strateginya. "
-    "Gunakan bahasa Indonesia yang profesional, lugas, dan berorientasi pada solusi. "
-    "ATURAN KRITIS: "
-    "(1) Headline WAJIB menyebut angka BEP dan gap dalam 1 kalimat tajam. "
-    "(2) Diagnosis WAJIB menyebut SATU akar masalah utama berdasarkan 'situation' yang diberikan, bukan daftar panjang. "
+    "Tugas Anda: menganalisa data keuangan harian dan memberikan instruksi taktis (Rencana Aksi) beserta edukasi strateginya. "
+    "ATURAN BAHASA (WAJIB DIPATUHI): "
+    "Seluruh isi jawaban HARUS dalam Bahasa Indonesia yang baku dan mudah dipahami pemilik usaha. "
+    "DILARANG menggunakan kata atau istilah Inggris dalam teks jawaban, termasuk namun tidak terbatas pada: "
+    "revenue, traffic, cost, margin, bundle, bundling, promo, happy hour, upsell, cross-sell, waste, "
+    "action plan, insight, headline, gap, driver, growth, discount, paket bundle, family bundle, dsb. "
+    "Gunakan padanan berikut: revenue=pendapatan, traffic=kunjungan, cost=biaya, "
+    "margin=laba/margin (margin sudah lazim, tetap boleh), bundle=bundel/paket, promo=promosi, "
+    "happy hour=jam promo, upsell=penawaran tambahan, waste=pemborosan, "
+    "action plan=rencana aksi, insight=wawasan, headline=ringkasan, gap=selisih, "
+    "driver=penggerak, growth=pertumbuhan, discount=potongan harga, BEP=titik impas, "
+    "attach rate=rasio minuman per makanan. "
+    "Nama produk/menu (misalnya 'Steak Original', 'Milo Latte') dan singkatan teknis seperti HPP boleh dipertahankan. "
+    "ATURAN ANALISIS: "
+    "(1) Ringkasan pembuka WAJIB menyebut angka Titik Impas dan selisih dalam 1 kalimat tajam. "
+    "(2) Diagnosis WAJIB menyebut SATU akar masalah utama berdasarkan situasi yang diberikan, bukan daftar panjang. "
     "(3) Instruksi harus spesifik dengan angka dan realistis untuk besok. "
-    "(4) Manfaatkan pola historis dan learning context jika tersedia — jangan mengarang, jangan mengulang template. "
+    "(4) Manfaatkan pola historis dan konteks pembelajaran jika tersedia — jangan mengarang, jangan mengulang template. "
     "(5) Jangan mengarang nama menu, angka, atau pola yang tidak ada di data. "
-    "Output HARUS berupa JSON valid."
+    "Output HARUS berupa JSON yang valid."
 )
 
 
 def _fmt(n):
-    return f"Rp {n:,.0f}".replace(",", ".")
+    return f"Rp {int(n):,}".replace(",", ".")
 
 
 def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
-                      bep_info, situation, hist_text, learning_ctx):
+                      bep_info, situation_label, hist_text, learning_ctx):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     menu_lines = []
@@ -34,7 +45,7 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
         key=lambda x: x['margin'], reverse=True
     ):
         menu_lines.append(
-            f"- {p['product']}: qty={p['qty']}, revenue={_fmt(p['revenue'])}, "
+            f"- {p['product']}: jumlah={p['qty']}, pendapatan={_fmt(p['revenue'])}, "
             f"laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
         )
 
@@ -43,7 +54,7 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
         if not items:
             continue
         names = ', '.join(
-            f"{i['product']} (qty {i['qty']}, laba {_fmt(i['margin'])})"
+            f"{i['product']} (jumlah {i['qty']}, laba {_fmt(i['margin'])})"
             for i in items[:8]
         )
         cls_lines.append(f"- {cat}: {names}")
@@ -64,9 +75,9 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
     price_anom_lines = []
     for a in (fin.get('price_anomalies') or [])[:6]:
         price_anom_lines.append(
-            f"- {a['product']} → {a['matched_name']}: avg {a['avg_price']:,} "
-            f"vs master {a['master_price']:,} ({a['gap_pct']:+.1f}%), "
-            f"qty={a['qty']}, margin={a['margin'] if a['margin'] is not None else 'N/A'}"
+            f"- {a['product']} → {a['matched_name']}: rata-rata {_fmt(a['avg_price'])} "
+            f"vs harga acuan {_fmt(a['master_price'])} ({a['gap_pct']:+.1f}%), "
+            f"jumlah={a['qty']}, laba={a['margin'] if a['margin'] is not None else 'tidak tersedia'}"
         )
 
     learning_text = format_learning_for_prompt(learning_ctx)
@@ -75,18 +86,18 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
 Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
 
 RINGKASAN KEUANGAN
-- Revenue: {_fmt(fin['revenue'])}
-- HPP: {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari revenue)
+- Pendapatan: {_fmt(fin['revenue'])}
+- HPP: {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari pendapatan)
 - Laba Kotor: {_fmt(fin['gross_profit'])}
 - Beban Operasional: {_fmt(fin['expenses'])}
-- Net Cash Flow: {_fmt(fin['net_cash_flow'])} ({status_net})
-- Attach rate minuman/makanan: {attach_rate_pct:.1f}%
+- Arus Kas Bersih: {_fmt(fin['net_cash_flow'])} ({status_net})
+- Rasio minuman per makanan: {attach_rate_pct:.1f}%
 
-BREAK-EVEN POINT (WAJIB DIRUJUK DI HEADLINE & DIAGNOSIS)
-- BEP revenue hari ini: {_fmt(bep_info['bep'])}
-- Fixed cost harian (median historis): {_fmt(bep_info['fixed_cost'])}
-- Gap revenue vs BEP: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
-- Situasi (hasil rule-based engine): {situation}
+TITIK IMPAS (WAJIB DIRUJUK DI RINGKASAN & DIAGNOSIS)
+- Titik impas pendapatan hari ini: {_fmt(bep_info['bep'])}
+- Biaya tetap harian (nilai tengah historis): {_fmt(bep_info['fixed_cost'])}
+- Selisih pendapatan terhadap titik impas: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
+- Situasi (hasil mesin aturan): {situation_label}
 
 DETAIL MENU TERJUAL (diurut laba tertinggi):
 {chr(10).join(menu_lines) if menu_lines else '- tidak ada data'}
@@ -97,23 +108,23 @@ KLASIFIKASI MENU:
 RINCIAN PENGELUARAN:
 {chr(10).join(exp_lines) if exp_lines else '- tidak ada'}
 
-PRODUK TANPA HPP (tidak masuk laba kotor):
+PRODUK TANPA HPP (tidak masuk hitungan laba kotor):
 {unmatched_line}
 
-PRICE ANOMALY (harga POS ≠ master menu — perlu validasi):
+ANOMALI HARGA (harga kasir tidak sama dengan daftar menu acuan — perlu validasi):
 {chr(10).join(price_anom_lines) if price_anom_lines else '- tidak ada'}
 
 {hist_text}
 
-POLA PEMBELAJARAN LINTAS HARI (makin kaya seiring waktu):
+POLA PEMBELAJARAN LINTAS HARI (semakin kaya seiring waktu):
 {learning_text}
 
 TUGAS:
-Hasilkan JSON PERSIS dengan struktur ini:
+Hasilkan JSON PERSIS dengan struktur ini (semua nilai teks dalam Bahasa Indonesia murni, tanpa kata Inggris):
 {{
   "kondisi": "Rugi" atau "Untung",
-  "headline": "1 kalimat tajam menyebut BEP, gap, dan 1 arahan utama",
-  "diagnosis": "2-3 kalimat menyebut SATU akar masalah utama sesuai situation. Bandingkan dengan tren historis bila ada.",
+  "headline": "1 kalimat tajam menyebut Titik Impas, selisih, dan 1 arahan utama",
+  "diagnosis": "2-3 kalimat menyebut SATU akar masalah utama sesuai situasi. Bandingkan dengan tren historis bila ada.",
   "instruksi": [
     {{"aksi": "Tindakan taktis spesifik dengan angka", "alasan": "Kenapa ini menyelesaikan akar masalah"}},
     {{"aksi": "...", "alasan": "..."}},
@@ -123,19 +134,19 @@ Hasilkan JSON PERSIS dengan struktur ini:
   "strategi": "1 paragraf gaya Konsultan: hubungkan akar masalah, pola historis, dan langkah 3-7 hari ke depan."
 }}
 
-ATURAN KHUSUS BERDASARKAN SITUASI:
-- TRAFFIC_PROBLEM: fokus menaikkan jumlah transaksi (promo, bundling, jam sepi).
-- COST_PROBLEM: fokus memangkas biaya (audit supplier, efisiensi operasional, waste).
-- HPP_TINGGI: fokus reformulasi menu, negosiasi bahan, atau kenaikan harga selektif.
-- MARGINAL: fokus mix menu — dorong item margin tinggi, kurangi item margin rendah.
-- SEHAT: fokus pengembangan (naikkan margin absolut, ekspansi pelanggan).
-- KRITIS: fokus penyelamatan kas darurat dalam 24 jam.
+PANDUAN ARAHAN BERDASARKAN SITUASI:
+- Kunjungan Rendah: fokus menaikkan jumlah transaksi (promosi, paket, jam sepi, undang pelanggan lama).
+- Biaya Operasional Tinggi: fokus memangkas biaya (audit pemasok, efisiensi operasional, pemborosan bahan).
+- HPP Terlalu Tinggi: fokus reformulasi menu, negosiasi harga bahan, atau penyesuaian harga jual selektif.
+- Margin Tipis: fokus campuran menu — dorong menu bermargin tinggi, kurangi menu bermargin rendah.
+- Sehat: fokus pengembangan (naikkan laba absolut, perluas pelanggan).
+- Kritis: fokus penyelamatan kas darurat dalam 24 jam.
 
 ATURAN TAMBAHAN:
-- Jika ada PRODUK TANPA HPP berulang di learning context, sarankan penambahan alias/sinkronisasi master menu sebagai salah satu instruksi.
-- Jika ada PRICE DRIFT signifikan, sarankan validasi harga POS atau update master.
-- Jika attach rate < 60%, sarankan strategi upsell minuman.
-- Jangan mengarang angka atau menu di luar data.
+- Jika ada PRODUK TANPA HPP yang berulang di pola pembelajaran, sarankan penambahan alias atau penyelarasan daftar menu acuan sebagai salah satu instruksi.
+- Jika ada ANOMALI HARGA yang signifikan, sarankan validasi harga kasir atau pembaruan daftar menu.
+- Jika rasio minuman per makanan di bawah 60%, sarankan strategi penawaran tambahan minuman.
+- DILARANG menulis kata Inggris dalam nilai JSON (kecuali nama produk/menu dan singkatan HPP).
 """
 
     resp = client.chat.completions.create(

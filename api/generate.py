@@ -28,6 +28,10 @@ env.filters['rp_neg'] = lambda v: f"({int(abs(v)):,})".replace(",", ".") if v is
 BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember']
 
 
+def _fmt_idr(n):
+    return f"Rp {int(n):,}".replace(",", ".")
+
+
 @app.route("/api/ping", methods=["GET"])
 def ping():
     return jsonify({
@@ -164,7 +168,7 @@ def generate_report():
 
         analysis = generate_analysis(
             fin, classification, tanggal_panjang, tanggal,
-            bep_info, situation, hist_text, learning_ctx,
+            bep_info, situation_label, hist_text, learning_ctx,
         )
 
         warnings = build_warnings(duplicate_expenses, fin, hist_text)
@@ -210,23 +214,26 @@ def build_warnings(duplicate_expenses, fin, hist_text):
 
     for d in duplicate_expenses:
         warnings.append(
-            f"Pengeluaran ganda: '{d['sub']}' ({d['category']}) Rp {d['amount']:,} "
-            f"muncul {d['occurrences']}x — total Rp {d['total_impact']:,}. Konfirmasi apakah dobel input."
+            f"Pengeluaran ganda: '{d['sub']}' ({d['category']}) "
+            f"{_fmt_idr(d['amount'])} muncul {d['occurrences']} kali — "
+            f"total {_fmt_idr(d['total_impact'])}. Konfirmasi apakah dobel input."
         )
 
     for a in (fin.get('price_anomalies') or [])[:5]:
         direction = "lebih rendah" if a['gap_pct'] < 0 else "lebih tinggi"
         warnings.append(
-            f"Harga '{a['product']}' avg Rp {a['avg_price']:,} — "
-            f"{abs(a['gap_pct'])}% {direction} dari master Rp {a['master_price']:,}. "
-            f"Cek promo POS atau update master."
+            f"Harga '{a['product']}' rata-rata {_fmt_idr(a['avg_price'])} — "
+            f"{abs(a['gap_pct'])}% {direction} dari harga acuan menu "
+            f"{_fmt_idr(a['master_price'])}. Cek apakah ada promosi kasir "
+            f"atau perbarui daftar menu acuan."
         )
 
     if fin.get('unmatched_products'):
         unmatched = ', '.join(fin['unmatched_products'])
         warnings.append(
-            f"Produk tidak match master menu (HPP tidak dihitung): {unmatched}. "
-            f"Laba kotor & margin di atas mengabaikan produk ini."
+            f"Produk tidak ditemukan di daftar menu acuan "
+            f"(HPP tidak dihitung): {unmatched}. "
+            f"Laba kotor dan margin di atas mengabaikan produk ini."
         )
 
     return warnings

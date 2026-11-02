@@ -172,7 +172,7 @@
 
 {% if warnings %}
 <div class="warning-banner">
-  <h3>⚠ Data Quality Warning — Baca Sebelum Angka</h3>
+  <h3>⚠ Peringatan Kualitas Data — Baca Sebelum Angka</h3>
   <ul>
     {% for w in warnings %}<li>{{ w }}</li>{% endfor %}
   </ul>
@@ -191,10 +191,10 @@
 
   <div class="bep-block">
     <div class="bep-info">
-      <span>Revenue: <strong>{{ fin.revenue|rupiah }}</strong></span>
-      <span>BEP: <strong>{{ bep_info.bep|rupiah }}</strong></span>
+      <span>Pendapatan: <strong>{{ fin.revenue|rupiah }}</strong></span>
+      <span>Titik Impas: <strong>{{ bep_info.bep|rupiah }}</strong></span>
       <span class="{% if bep_info.gap < 0 %}under{% else %}over{% endif %}">
-        {% if bep_info.gap < 0 %}Di bawah BEP{% else %}Di atas BEP{% endif %}:
+        {% if bep_info.gap < 0 %}Di bawah Titik Impas{% else %}Di atas Titik Impas{% endif %}:
         {{ bep_info.gap|rupiah }} ({{ bep_info.gap_pct }}%)
       </span>
     </div>
@@ -218,11 +218,11 @@
 <h2>Ringkasan Keuangan</h2>
 <div class="card-summary">
   <div class="summary-row">
-    <span>Total Pendapatan (Revenue)</span>
+    <span>Total Pendapatan</span>
     <span class="fw-bold">{{ fin.revenue|rupiah }}</span>
   </div>
   <div class="summary-row">
-    <span>HPP ({{ (bep_info.hpp_ratio * 100)|round(1) }}% dari Revenue)</span>
+    <span>HPP ({{ (bep_info.hpp_ratio * 100)|round(1) }}% dari Pendapatan)</span>
     <span class="fw-bold val-danger">{{ fin.hpp|rp_neg }}</span>
   </div>
   <div class="summary-row total">
@@ -234,11 +234,11 @@
     <span class="fw-bold val-danger">{{ fin.expenses|rp_neg }}</span>
   </div>
   <div class="summary-row total" style="color: {% if fin.net_cash_flow < 0 %}var(--danger){% else %}var(--success){% endif %};">
-    <span>Net Cash Flow</span>
+    <span>Arus Kas Bersih</span>
     <span>{{ fin.net_cash_flow|rp_neg }}</span>
   </div>
   <div class="summary-row" style="border-top: 1px solid var(--border); margin-top: 8px;">
-    <span>Attach Rate Minuman/Makanan</span>
+    <span>Rasio Minuman per Makanan</span>
     <span class="fw-bold">{{ (fin.attach_rate * 100)|round(1) }}%</span>
   </div>
 </div>
@@ -251,19 +251,19 @@
   <p style="font-size: 13.5px; margin: 0 0 16px 0; color: var(--primary);">{{ analysis.diagnosis }}</p>
 
   <div class="analysis-title">
-    <span class="badge badge-blue">Action Plan Lengkap</span>
+    <span class="badge badge-blue">Rencana Aksi Lengkap</span>
   </div>
   <ul class="analysis-list">
     {% for item in analysis.instruksi %}
     <li>
       <strong>{{ loop.index }}. {{ item.aksi }}</strong><br>
-      <span style="color: #64748b; font-size: 12px;"><em>Kenapa: {{ item.alasan }}</em></span>
+      <span style="color: #64748b; font-size: 12px;"><em>Alasan: {{ item.alasan }}</em></span>
     </li>
     {% endfor %}
   </ul>
 
   <div class="analysis-title" style="margin-top: 16px;">
-    <span class="badge badge-green">Insight Konsultan</span>
+    <span class="badge badge-green">Wawasan Konsultan</span>
   </div>
   <p style="color: var(--secondary); font-size: 12.5px; line-height: 1.6; background: #f8fafc; padding: 12px; border-radius: 6px; margin: 0;">
     {{ analysis.strategi }}
@@ -276,7 +276,7 @@
     <thead>
       <tr>
         <th style="width:40%;">Menu / Produk</th>
-        <th class="text-right">Qty</th>
+        <th class="text-right">Jumlah</th>
         <th class="text-right">Pendapatan</th>
         <th class="text-right">Laba Kotor</th>
       </tr>
@@ -295,7 +295,7 @@
             <td class="text-right">{{ p.qty }}</td>
             <td class="text-right">{{ p.revenue|rupiah }}</td>
             <td class="text-right {% if p.margin is none %}warn{% elif p.margin < 0 %}err{% else %}val-success{% endif %}">
-              {% if p.margin is none %}— HPP N/A{% else %}{{ p.margin|rupiah }}{% endif %}
+              {% if p.margin is none %}— HPP tidak tersedia{% else %}{{ p.margin|rupiah }}{% endif %}
             </td>
           </tr>
         {% endfor %}
@@ -337,13 +337,13 @@
   </table>
 </div>
 
-<h2>Klasifikasi Menu (Menu Engineering)</h2>
+<h2>Klasifikasi Menu</h2>
 <div class="table-responsive">
   <table>
     <thead>
       <tr>
         <th style="width:25%;">Kategori</th>
-        <th>Daftar Menu (Qty | Laba)</th>
+        <th>Daftar Menu (Jumlah | Laba)</th>
       </tr>
     </thead>
     <tbody>
@@ -363,7 +363,7 @@
               <div style="margin-bottom: 4px;">
                 <strong>{{ item.product }}</strong>
                 <span style="color: var(--secondary); font-size: 11.5px;">
-                  (Qty {{ item.qty }} | Laba {{ item.margin|rupiah }})
+                  (Jumlah {{ item.qty }} | Laba {{ item.margin|rupiah }})
                 </span>
               </div>
             {% endfor %}

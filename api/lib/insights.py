@@ -6,8 +6,8 @@ SITUATION_LABELS = {
     'SEHAT': 'Sehat',
     'KRITIS': 'Kritis',
     'HPP_TINGGI': 'HPP Terlalu Tinggi',
-    'TRAFFIC_PROBLEM': 'Masalah Traffic',
-    'COST_PROBLEM': 'Masalah Biaya Operasional',
+    'TRAFFIC_PROBLEM': 'Kunjungan Rendah',
+    'COST_PROBLEM': 'Biaya Operasional Tinggi',
     'MARGINAL': 'Margin Tipis',
 }
 
@@ -22,7 +22,7 @@ SITUATION_CLASSES = {
 
 
 def _fmt(n):
-    return f"Rp {n:,.0f}".replace(",", ".")
+    return f"Rp {int(n):,}".replace(",", ".")
 
 
 def build_historical_context(tanggal_iso, days=7):
@@ -54,8 +54,8 @@ def build_historical_context(tanggal_iso, days=7):
         exp = float(r['expenses'] or 0)
         net = float(r['net_cash_flow'] or 0)
         lines.append(
-            f"- {r['tanggal']}: Revenue={_fmt(rev)}, HPP={_fmt(hpp)}, "
-            f"Expenses={_fmt(exp)}, Net={_fmt(net)}"
+            f"- {r['tanggal']}: Pendapatan={_fmt(rev)}, HPP={_fmt(hpp)}, "
+            f"Beban={_fmt(exp)}, Arus Kas Bersih={_fmt(net)}"
         )
         revenues.append(rev)
         expenses.append(exp)
@@ -69,22 +69,22 @@ def build_historical_context(tanggal_iso, days=7):
     avg_hpp_ratio = sum(hpp_ratios) / len(hpp_ratios) if hpp_ratios else 0
 
     lines.append("")
-    lines.append(f"Rata-rata Revenue: {_fmt(avg_rev)}")
-    lines.append(f"Rata-rata Expenses: {_fmt(avg_exp)}")
-    lines.append(f"Rata-rata Net: {_fmt(avg_net)}")
+    lines.append(f"Rata-rata Pendapatan: {_fmt(avg_rev)}")
+    lines.append(f"Rata-rata Beban: {_fmt(avg_exp)}")
+    lines.append(f"Rata-rata Arus Kas Bersih: {_fmt(avg_net)}")
     if avg_hpp_ratio > 0:
-        lines.append(f"Rata-rata HPP ratio: {avg_hpp_ratio * 100:.1f}%")
+        lines.append(f"Rata-rata rasio HPP: {avg_hpp_ratio * 100:.1f}%")
 
     try:
         top_menus = db.get_menus_aggregate(from_date, to_date, group_by='matched_name')[:5]
         if top_menus:
             lines.append("")
-            lines.append("Top 5 menu berdasarkan revenue (periode ini):")
+            lines.append("Lima menu dengan pendapatan tertinggi (periode ini):")
             for m in top_menus:
                 lines.append(
-                    f"- {m['group_key']}: qty={m['total_qty']}, "
-                    f"revenue={_fmt(float(m['total_revenue']))}, "
-                    f"margin={_fmt(float(m['total_margin']))}"
+                    f"- {m['group_key']}: jumlah={m['total_qty']}, "
+                    f"pendapatan={_fmt(float(m['total_revenue']))}, "
+                    f"laba={_fmt(float(m['total_margin']))}"
                 )
     except Exception:
         pass
@@ -93,7 +93,7 @@ def build_historical_context(tanggal_iso, days=7):
         medians = db.get_expenses_median_by_category(from_date, to_date)
         if medians:
             lines.append("")
-            lines.append("Median pengeluaran harian per kategori (patokan normal):")
+            lines.append("Nilai tengah pengeluaran harian per kategori (patokan normal):")
             for cat, med in medians.items():
                 lines.append(f"- {cat}: {_fmt(med)}")
     except Exception:
