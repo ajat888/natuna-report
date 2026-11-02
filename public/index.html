@@ -112,10 +112,23 @@ f.onsubmit = async (e) => {
 };
 
 document.getElementById('dl').onclick = () => {
+  // 1. Ambil tanggal dari form (format YYYY-MM-DD)
+  const dateInput = document.querySelector('input[name="tanggal"]').value;
+  
+  // 2. Format tanggal menjadi teks Indonesia (contoh: 1 November 2026)
+  // Ditambahkan 'T00:00:00' agar tidak terjadi pergeseran hari karena zona waktu (UTC vs WIB)
+  const dateObj = new Date(dateInput + 'T00:00:00');
+  const options = { day: 'numeric', month: 'long', year: 'numeric' };
+  const formattedDate = dateObj.toLocaleDateString('id-ID', options);
+
+  // 3. Buat nama file sesuai permintaan
+  const fileName = `Laporan Keuangan NATUNA Café & Resto ${formattedDate}.html`;
+
+  // 4. Proses Download
   const url = URL.createObjectURL(new Blob([lastHtml], { type: 'text/html' }));
   const a = Object.assign(document.createElement('a'), {
     href: url, 
-    download: `laporan-natuna-${new Date().toISOString().slice(0,10)}.html`,
+    download: fileName, // Nama file diambil dari variabel di atas
   });
   a.click();
   URL.revokeObjectURL(url);
