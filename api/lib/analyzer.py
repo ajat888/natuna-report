@@ -30,7 +30,7 @@ SYSTEM_PROMPT = (
     "(4) Manfaatkan pola historis dan konteks pembelajaran jika tersedia — jangan mengarang, jangan mengulang template. "
     "(5) Jangan mengarang nama menu, angka, atau pola yang tidak ada di data. "
     "(6) Jangan menyebut angka rasio minuman per makanan selain yang tertulis di prompt. "
-    "(7) Bedakan Laba Operasional (untung/rugi sesungguhnya) dengan Arus Kas Harian (uang masuk dikurangi uang keluar). "
+    "(7) FOKUS UTAMA: 'Bersih' berarti Kas Bersih (Pendapatan dikurangi Total Pengeluaran). Jangan memusingkan pemilik dengan istilah rumit. "
     "ATURAN KONSISTENSI STATUS-DIAGNOSIS (WAJIB): "
     "Situasi menentukan nada diagnosis — tidak boleh bertentangan. "
     "- Jika situasi = Sehat: Diagnosis HARUS DIAWALI dengan 'Operasional hari ini sehat' atau sejenisnya, menyebut laba operasional positif. "
@@ -98,7 +98,6 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
         )
         exp_lines.append(f"- {cat} ({_fmt(data['total'])}): {items_str}")
 
-    status_op = "RUGI" if fin['operating_profit'] < 0 else "UNTUNG"
     status_cash = "NEGATIF" if fin['cash_flow'] < 0 else "POSITIF"
 
     hpp_ratio_pct = bep_info['hpp_ratio'] * 100
@@ -119,14 +118,17 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
 Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
 
 RINGKASAN KEUANGAN HARI INI
-- Pendapatan: {_fmt(fin['revenue'])}
-- HPP (bahan terjual): {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari pendapatan)
+- Total Pendapatan: {_fmt(fin['revenue'])}
+- Total Pengeluaran: {_fmt(fin['expenses'])}
+- KAS BERSIH: {_fmt(fin['cash_flow'])} ({status_cash})
+- Rasio minuman per makanan: {attach_rate_pct:.1f}%
+
+CATATAN AKUNTANSI (Gunakan sebagai wawasan, JANGAN sebut sebagai "Kas Bersih"):
+- HPP (bahan yang terjual): {_fmt(fin['hpp'])} ({hpp_ratio_pct:.1f}% dari pendapatan)
 - Laba Kotor: {_fmt(fin['gross_profit'])}
 - Beban Non-Bahan: {_fmt(fin['overhead_expenses'])}
-- Laba Operasional: {_fmt(fin['operating_profit'])} ({status_op})
-- Belanja Stok Bahan: {_fmt(fin['bahan_purchases'])}
-- Total Belanja Kas: {_fmt(fin['expenses'])}
-- Arus Kas Harian: {_fmt(fin['cash_flow'])} ({status_cash})
+- Laba Operasional (pendapatan - HPP - beban): {_fmt(fin['operating_profit'])}
+- Belanja Stok Bahan (uang keluar untuk beli bahan): {_fmt(fin['bahan_purchases'])}
 
 TITIK IMPAS
 - Titik impas pendapatan hari ini: {_fmt(bep_info['bep'])} (dihitung dari beban non-bahan hari ini)
@@ -221,7 +223,7 @@ ATURAN TAMBAHAN:
         if has_forbidden or not diag.lower().startswith(('operasional', 'kondisi', 'hari ini')):
             data['diagnosis'] = (
                 f"Operasional hari ini sehat: laba operasional {_fmt(fin['operating_profit'])} "
-                f"dan arus kas {_fmt(fin['cash_flow'])}. "
+                f"dan kas bersih {_fmt(fin['cash_flow'])}. "
                 f"{diag}"
             ).strip()
 
@@ -237,7 +239,7 @@ ATURAN TAMBAHAN:
         )
 
     if not data.get('kondisi'):
-        data['kondisi'] = "Rugi" if fin['operating_profit'] < 0 else "Untung"
+        data['kondisi'] = "Rugi" if fin['cash_flow'] < 0 else "Untung"
 
     if not isinstance(data.get('instruksi'), list) or not data['instruksi']:
         data['instruksi'] = [{
