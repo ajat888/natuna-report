@@ -27,7 +27,7 @@ SYSTEM_PROMPT = (
     "Jangan membandingkan kategori belanja vs total (apel vs jeruk). "
     "ATURAN VERIFIKASI (FATAL): Jika aksi kemarin berstatus BELUM DIEKSEKUSI, "
     "DILARANG klaim aksi berhasil atau berkontribusi. "
-    "Output akhir HARUS JSON valid."
+    "Output akhir HARUS berupa JSON murni (tanpa teks pembuka/penutup/markdown)."
 )
 
 NEW_MENU_KWS = ('tambahkan menu', 'tambah menu', 'menu baru', 'perkenalkan menu', 'memperkenalkan menu')
@@ -499,15 +499,37 @@ def _get_available_models(client):
 def _extract_json(text):
     if not text:
         return None
+        
+    # 1. Coba parse langsung
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        m = re.search(r'\{.*\}', text, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group(0))
-            except json.JSONDecodeError:
-                pass
+        pass
+
+    # 2. Coba bersihkan markdown block ```json ... ```
+    md_match = re.search(r'```(?:json)?\s*(.*?)\s*```', text, re.DOTALL | re.IGNORECASE)
+    if md_match:
+        try:
+            return json.loads(md_match.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # 3. Parser bracket-matching (mengatasi teks pembuka/penutup)
+    start_idx = text.find('{')
+    if start_idx != -1:
+        depth = 0
+        for i in range(start_idx, len(text)):
+            if text[i] == '{':
+                depth += 1
+            elif text[i] == '}':
+                depth -= 1
+                if depth == 0:
+                    candidate = text[start_idx:i+1]
+                    try:
+                        return json.loads(candidate)
+                    except json.JSONDecodeError:
+                        break # Blok pertama gagal, hentikan
+                        
     return None
 
 
@@ -668,23 +690,44 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
                 break
             for attempt in range(2):
                 try:
-                    resp = client.chat.completions.create(
-                        model=model_name,
-                        messages=[
-                            {"role": "system", "content": SYSTEM_PROMPT},
-                            {"role": "user", "content": prompt},
-                        ],
-                        temperature=0.2,
-                        max_tokens=MAX_COMPLETION_TOKENS,
-                    )
+                    # Mencoba dengan JSON mode (response_format) agar AI dipaksa menghasilkan JSON murni
+                    try:
+                        resp = client.chat.completions.create(
+                            model=model_name,
+                            messages=[
+                                {"role": "system", "content": SYSTEM_PROMPT},
+                                {"role": "user", "content": prompt},
+                            ],
+                            temperature=0.2,
+                            max_tokens=MAX_COMPLETION_TOKENS,
+                            response_format={"type": "json_object"},
+                        )
+                    except Exception as json_mode_err:
+                        # Fallback jika model tidak mendukung response_format
+                        if 'response_format' in str(json_mode_err).lower() or 'not supported' in str(json_mode_err).lower():
+                            resp = client.chat.completions.create(
+                                model=model_name,
+                                messages=[
+                                    {"role": "system", "content": SYSTEM_PROMPT},
+                                    {"role": "user", "content": prompt},
+                                ],
+                                temperature=0.2,
+                                max_tokens=MAX_COMPLETION_TOKENS,
+                            )
+                        else:
+                            raise json_mode_err
+
                     raw = resp.choices[0].message.content
                     parsed = _extract_json(raw)
                     if parsed:
                         data = parsed
                         print(f"[ai] success model={model_name} shrink={shrink}", flush=True)
                         break
-                    last_error = Exception("Gagal parse JSON")
-                    break
+                    else:
+                        snippet = raw[:150].replace('\n', ' ')
+                        last_error = Exception(f"Gagal parse JSON. Raw: {snippet}...")
+                        print(f"[ai] parse fail model={model_name} raw: {snippet}", flush=True)
+                        break
                 except RateLimitError as e:
                     if attempt == 0:
                         time.sleep(4)
