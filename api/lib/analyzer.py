@@ -27,7 +27,7 @@ SYSTEM_PROMPT = (
     "Jangan membandingkan kategori belanja vs total (apel vs jeruk). "
     "ATURAN VERIFIKASI (FATAL): Jika aksi kemarin berstatus BELUM DIEKSEKUSI, "
     "DILARANG klaim aksi berhasil atau berkontribusi. "
-    "Output akhir HARUS berupa JSON murni (tanpa teks pembuka/penutup/markdown)."
+    "ATURAN OUTPUT (FATAL): Kembalikan HANYA objek JSON murni. Tanpa teks pembuka, penutup, atau markdown."
 )
 
 NEW_MENU_KWS = ('tambahkan menu', 'tambah menu', 'menu baru', 'perkenalkan menu', 'memperkenalkan menu')
@@ -528,7 +528,7 @@ def _extract_json(text):
                     try:
                         return json.loads(candidate)
                     except json.JSONDecodeError:
-                        break # Blok pertama gagal, hentikan
+                        break
                         
     return None
 
@@ -628,37 +628,27 @@ POLA PEMBELAJARAN:
 
 SITUASI: {situation_label}
 
-TUGAS: Hasilkan JSON valid (Bahasa Indonesia, tanpa kata Inggris):
+TUGAS: Hasilkan JSON valid (Bahasa Indonesia baku, dilarang kata Inggris).
+Kembalikan HANYA format JSON ini:
 {{
   "kondisi": "Rugi" atau "Untung",
-  "headline": "1 kalimat: kas bersih + arahan utama. WAJIB sebut 1 delta jika ada perbandingan.",
-  "diagnosis": "2-3 kalimat FAKTA hari ini (JANGAN masukkan rencana). Wajib bahas sinyal jika ada. Wajib sebut status verifikasi aksi jika ada.",
+  "headline": "1 kalimat tajam: kas bersih + arahan utama. WAJIB sebut 1 delta jika ada perbandingan.",
+  "diagnosis": "2-3 kalimat FAKTA hari ini. Wajib bahas sinyal jika ada. Wajib sebut status verifikasi aksi jika ada.",
   "instruksi": [
     {{"aksi": "Tindakan taktis spesifik", "alasan": "Alasan singkat"}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}}
   ],
-  "strategi": "1 paragraf RENCANA 3-7 HARI (berbeda dari diagnosis, bukan ulang diagnosis)."
+  "strategi": "1 paragraf RENCANA 3-7 HARI KE DEPAN (harus berbeda dari diagnosis)."
 }}
-
-ATURAN AKSI:
-- Sehat -> pertumbuhan, DILARANG memangkas menu/biaya.
-- HPP Kronis -> perbaiki margin struktural (harga/porsi/pemasok).
-- Stok Berlebih -> batasi belanja dengan angka spesifik.
-- Kunjungan Rendah -> promosi, jam promo, pelanggan lama.
-- HPP Tinggi (akut) -> negosiasi, porsi, harga.
-- Biaya Operasional Tinggi -> audit listrik/gas/kemasan.
-- Margin Tipis -> dorong margin tinggi.
-- Kritis -> penyelamatan kas 24 jam.
 
 ATURAN FATAL:
 - WAJIB 4 aksi.
 - DILARANG "tambah menu baru X" jika sudah ada.
-- DILARANG hapus/kurangi menu yang menyumbang >5% pendapatan.
+- DILARANG hapus menu yang menyumbang >5% pendapatan.
 - DILARANG sebut angka yang tidak ada di data.
 - DILARANG naik harga + diskon pada menu yang sama.
-- Strategi HARUS berbeda dari Diagnosis.
 - Jika X "melampaui" Y maka X>Y. Jika X "di bawah" Y maka X<Y.
 - Jika aksi kemarin BELUM DIEKSEKUSI, jangan klaim berhasil.
 """
@@ -690,33 +680,15 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
                 break
             for attempt in range(2):
                 try:
-                    # Mencoba dengan JSON mode (response_format) agar AI dipaksa menghasilkan JSON murni
-                    try:
-                        resp = client.chat.completions.create(
-                            model=model_name,
-                            messages=[
-                                {"role": "system", "content": SYSTEM_PROMPT},
-                                {"role": "user", "content": prompt},
-                            ],
-                            temperature=0.2,
-                            max_tokens=MAX_COMPLETION_TOKENS,
-                            response_format={"type": "json_object"},
-                        )
-                    except Exception as json_mode_err:
-                        # Fallback jika model tidak mendukung response_format
-                        if 'response_format' in str(json_mode_err).lower() or 'not supported' in str(json_mode_err).lower():
-                            resp = client.chat.completions.create(
-                                model=model_name,
-                                messages=[
-                                    {"role": "system", "content": SYSTEM_PROMPT},
-                                    {"role": "user", "content": prompt},
-                                ],
-                                temperature=0.2,
-                                max_tokens=MAX_COMPLETION_TOKENS,
-                            )
-                        else:
-                            raise json_mode_err
-
+                    resp = client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": SYSTEM_PROMPT},
+                            {"role": "user", "content": prompt},
+                        ],
+                        temperature=0.2,
+                        max_tokens=MAX_COMPLETION_TOKENS,
+                    )
                     raw = resp.choices[0].message.content
                     parsed = _extract_json(raw)
                     if parsed:
@@ -748,8 +720,16 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
         if not context_error and not isinstance(last_error, RateLimitError):
             break
 
+    # FALLBACK TOTAL: Jika AI gagal, gunakan sistem rule-based agar laporan tetap terbuat
     if data is None:
-        raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
+        print(f"[ai] ALL AI FAILED. Menggunakan rule-based fallback. Last error: {last_error}", flush=True)
+        data = {
+            "kondisi": "Rugi" if fin['cash_flow'] < 0 else "Untung",
+            "headline": _build_fallback_headline(fin, bep_info, yctx, situation),
+            "diagnosis": f"Sistem AI sedang tidak dapat dihubungi. Menggunakan analisis sistem: pendapatan {_fmt(fin['revenue'])} dengan kas bersih {_fmt(fin['cash_flow'])}.",
+            "instruksi": _fallback_actions(fin, situation, bep_info),
+            "strategi": _fallback_strategi(fin, situation, bep_info)
+        }
 
     data = _fix_analysis(data, fin, situation, bep_info, yctx=yctx, anomalies=anomalies)
     return data
