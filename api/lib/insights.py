@@ -1,3 +1,4 @@
+import re
 from datetime import datetime, timedelta
 from . import db
 
@@ -6,6 +7,7 @@ SITUATION_LABELS = {
     'SEHAT': 'Sehat',
     'KRITIS': 'Kritis',
     'HPP_TINGGI': 'HPP Terlalu Tinggi',
+    'HPP_KRONIS': 'HPP Tinggi Berkelanjutan',
     'TRAFFIC_PROBLEM': 'Kunjungan Rendah',
     'COST_PROBLEM': 'Biaya Operasional Tinggi',
     'MARGINAL': 'Margin Tipis',
@@ -16,6 +18,7 @@ SITUATION_CLASSES = {
     'SEHAT': 'sehat',
     'KRITIS': 'kritis',
     'HPP_TINGGI': 'hpp',
+    'HPP_KRONIS': 'hpp',
     'TRAFFIC_PROBLEM': 'traffic',
     'COST_PROBLEM': 'cost',
     'MARGINAL': 'marginal',
@@ -27,6 +30,24 @@ def _fmt(n):
     if n is None:
         return '-'
     return f"Rp {int(n):,}".replace(",", ".")
+
+
+def _parse_rp(tok):
+    if not tok:
+        return None
+    tok = tok.strip().lower()
+    tok = re.sub(r'\brp\s*', '', tok).strip()
+    mult = 1
+    if 'juta' in tok or 'jt' in tok:
+        mult = 1_000_000
+    elif 'rb' in tok or 'ribu' in tok:
+        mult = 1_000
+    tok = re.sub(r'\s*(juta|jt|rb|ribu)\s*', '', tok).strip()
+    tok = tok.replace('.', '').replace(',', '.')
+    try:
+        return float(tok) * mult
+    except ValueError:
+        return None
 
 
 def _get_overhead(r):
@@ -46,88 +67,67 @@ def _get_op_profit(r):
     return rev - hpp - _get_overhead(r)
 
 
-def build_historical_context(tanggal_iso, days=7):
-    empty_meta = {
-        'n_days': 0, 'avg_revenue': 0.0, 'avg_overhead': 0.0,
-        'avg_op_profit': 0.0, 'avg_hpp_ratio': 0.0,
-    }
-    try:
-        tgl = datetime.strptime(tanggal_iso, "%Y-%m-%d").date()
-        from_date = (tgl - timedelta(days=days)).isoformat()
-        to_date = (tgl - timedelta(days=1)).isoformat()
-    except Exception:
-        return "(tanggal tidak valid)", empty_meta
+def _verify_single_action(action, fin, yctx):
+    text = (action or '').lower()
+    if not text:
+        return {'action': action, 'status': 'unknown', 'detail': 'Aksi kosong'}
 
-    try:
-        reports = db.get_reports_in_range(from_date, to_date)
-    except Exception:
-        return "(gagal membaca data historis)", empty_meta
+    m = re.search(r'harga\s+(.+?)\s+(?:menjadi|ke)\s+rp\s*([\d.,]+)', text)
+    if m:
+        target_name = m.group(1).strip()
+        target_price = _parse_rp('Rp ' + m.group(2))
+        if target_price and target_name:
+            for p in fin['per_menu']:
+                candidates = [(p.get('matched_name') or '').lower(), (p['product'] or '').lower()]
+                if any(target_name in c or c in target_name for c in candidates if c and len(c) >= 4):
+                    up = p.get('unit_price') or 0
+                    if up > 0:
+                        diff = abs(up - target_price)
+                        tolerance = max(500, target_price * 0.02)
+                        if diff <= tolerance:
+                            return {
+                                'action': action,
+                                'status': 'likely_executed',
+                                'detail': f'Harga {p["product"]} saat ini {_fmt(up)} (target {_fmt(target_price)}).',
+                            }
+                        return {
+                            'action': action,
+                            'status': 'likely_not_executed',
+                            'detail': f'Harga {p["product"]} masih {_fmt(up)}, target {_fmt(target_price)}.',
+                        }
 
-    if not reports:
-        return "(belum ada data historis — ini laporan pertama atau data historis belum tersedia)", empty_meta
+    if ('batasi' in text or 'hentikan' in text or 'kurangi' in text) and \
+       ('belanja' in text or 'bahan' in text or 'dapur' in text):
+        today_bahan = int(fin.get('bahan_purchases', 0))
+        prev_bahan = int(yctx.get('prev_bahan_purchases', 0))
+        if prev_bahan > 0:
+            change_pct = (today_bahan - prev_bahan) / prev_bahan * 100
+            if change_pct <= -20:
+                return {
+                    'action': action,
+                    'status': 'likely_executed',
+                    'detail': f'Belanja bahan turun {abs(change_pct):.0f}% ({_fmt(prev_bahan)} → {_fmt(today_bahan)}).',
+                }
+            if change_pct < -5:
+                return {
+                    'action': action,
+                    'status': 'partial',
+                    'detail': f'Belanja bahan turun sedikit {abs(change_pct):.0f}% ({_fmt(prev_bahan)} → {_fmt(today_bahan)}).',
+                }
+            return {
+                'action': action,
+                'status': 'likely_not_executed',
+                'detail': f'Belanja bahan masih {_fmt(today_bahan)} (kemarin {_fmt(prev_bahan)}).',
+            }
 
-    lines = [f"KONTEKS HISTORIS ({len(reports)} hari sebelum {tanggal_iso}):"]
-    revenues, overheads, op_profits, hpp_ratios = [], [], [], []
+    if 'audit' in text or 'stok fisik' in text:
+        return {'action': action, 'status': 'unknown', 'detail': 'Audit stok tidak dapat diverifikasi dari data penjualan.'}
 
-    for r in reports:
-        rev = float(r['revenue'] or 0)
-        hpp = float(r['hpp'] or 0)
-        oh = _get_overhead(r)
-        op = _get_op_profit(r)
-        lines.append(
-            f"- {r['tanggal']}: Pendapatan={_fmt(rev)}, HPP={_fmt(hpp)}, "
-            f"Beban Non-Bahan={_fmt(oh)}, Laba Operasional={_fmt(op)}"
-        )
-        revenues.append(rev)
-        overheads.append(oh)
-        op_profits.append(op)
-        if rev > 0:
-            hpp_ratios.append(hpp / rev)
+    return {'action': action, 'status': 'unknown', 'detail': 'Tidak dapat diverifikasi otomatis dari data.'}
 
-    avg_rev = sum(revenues) / len(revenues) if revenues else 0
-    avg_oh = sum(overheads) / len(overheads) if overheads else 0
-    avg_op = sum(op_profits) / len(op_profits) if op_profits else 0
-    avg_hpp = sum(hpp_ratios) / len(hpp_ratios) if hpp_ratios else 0
 
-    lines.append("")
-    lines.append(f"Rata-rata Pendapatan: {_fmt(avg_rev)}")
-    lines.append(f"Rata-rata Beban Non-Bahan: {_fmt(avg_oh)}")
-    lines.append(f"Rata-rata Laba Operasional: {_fmt(avg_op)}")
-    if avg_hpp > 0:
-        lines.append(f"Rata-rata rasio HPP: {avg_hpp * 100:.1f}%")
-
-    try:
-        top_menus = db.get_menus_aggregate(from_date, to_date, group_by='matched_name')[:5]
-        if top_menus:
-            lines.append("")
-            lines.append("Lima menu dengan pendapatan tertinggi (periode ini):")
-            for m in top_menus:
-                lines.append(
-                    f"- {m['group_key']}: jumlah={m['total_qty']}, "
-                    f"pendapatan={_fmt(float(m['total_revenue']))}, "
-                    f"laba={_fmt(float(m['total_margin']))}"
-                )
-    except Exception:
-        pass
-
-    try:
-        medians = db.get_expenses_median_by_category(from_date, to_date)
-        if medians:
-            lines.append("")
-            lines.append("Nilai tengah pengeluaran harian per kategori (patokan normal):")
-            for cat, med in medians.items():
-                lines.append(f"- {cat}: {_fmt(med)}")
-    except Exception:
-        pass
-
-    meta = {
-        'n_days': len(reports),
-        'avg_revenue': avg_rev,
-        'avg_overhead': avg_oh,
-        'avg_op_profit': avg_op,
-        'avg_hpp_ratio': avg_hpp,
-    }
-    return "\n".join(lines), meta
+def _verify_actions_list(prev_actions, fin, yctx):
+    return [_verify_single_action(a, fin, yctx) for a in prev_actions]
 
 
 def build_yesterday_context(tanggal_iso, today_fin):
@@ -144,6 +144,10 @@ def build_yesterday_context(tanggal_iso, today_fin):
         'prev_items': 0,
         'prev_cash': 0,
         'prev_attach_rate': 0.0,
+        'prev_bahan_purchases': 0,
+        'prev_overhead': 0,
+        'prev_expenses_total': 0,
+        'verifications': [],
     }
 
     try:
@@ -163,6 +167,9 @@ def build_yesterday_context(tanggal_iso, today_fin):
     prev_cash = float(prev.get('net_cash_flow') or 0)
     prev_items = int(prev.get('total_items') or 0)
     prev_ar = float(prev.get('attach_rate') or 0)
+    prev_bahan = int(prev.get('bahan_total') or 0)
+    prev_overhead = int(prev.get('overhead_total') or 0)
+    prev_expenses = int(prev.get('expenses') or 0)
 
     today_rev = today_fin['revenue']
     today_cash = today_fin['cash_flow']
@@ -251,7 +258,16 @@ def build_yesterday_context(tanggal_iso, today_fin):
             if isinstance(item, dict) and item.get('aksi'):
                 prev_actions.append(item['aksi'])
 
-    lines = [f"PERBANDINGAN DENGAN LAPORAN SEBELUMNYA ({prev['tanggal']}):"]
+    prev_date_str = prev['tanggal'].isoformat() if hasattr(prev['tanggal'], 'isoformat') else str(prev['tanggal'])
+
+    yctx_base = {
+        'prev_bahan_purchases': prev_bahan,
+        'prev_overhead': prev_overhead,
+        'prev_expenses_total': prev_expenses,
+    }
+    verifications = _verify_actions_list(prev_actions, today_fin, yctx_base) if prev_actions else []
+
+    lines = [f"PERBANDINGAN DENGAN LAPORAN SEBELUMNYA ({prev_date_str}):"]
     for c in comparisons:
         lines.append(f"- {c['label']}: {c['display']}")
     if movers:
@@ -263,13 +279,18 @@ def build_yesterday_context(tanggal_iso, today_fin):
     if prev_headline:
         lines.append("")
         lines.append(f"HEADLINE LAPORAN KEMARIN: {prev_headline}")
-    if prev_actions:
+    if verifications:
         lines.append("")
-        lines.append("AKSI YANG DISARANKAN KEMARIN (evaluasi apakah terlihat dampaknya hari ini):")
-        for i, a in enumerate(prev_actions, 1):
-            lines.append(f"{i}. {a}")
-
-    prev_date_str = prev['tanggal'].isoformat() if hasattr(prev['tanggal'], 'isoformat') else str(prev['tanggal'])
+        lines.append("STATUS AKSI KEMARIN (verifikasi otomatis dari data hari ini):")
+        status_map = {
+            'likely_executed': 'TEREKSKUSI',
+            'partial': 'SEBAGIAN',
+            'likely_not_executed': 'BELUM DIEKSEKUSI',
+            'unknown': 'TIDAK DIVERIFIKASI',
+        }
+        for i, v in enumerate(verifications, 1):
+            lines.append(f"{i}. \"{v['action']}\"")
+            lines.append(f"   Status: {status_map.get(v['status'], v['status'])}. {v['detail']}")
 
     return {
         'has_previous': True,
@@ -284,6 +305,10 @@ def build_yesterday_context(tanggal_iso, today_fin):
         'prev_items': prev_items,
         'prev_cash': int(prev_cash),
         'prev_attach_rate': prev_ar,
+        'prev_bahan_purchases': prev_bahan,
+        'prev_overhead': prev_overhead,
+        'prev_expenses_total': prev_expenses,
+        'verifications': verifications,
     }
 
 
@@ -347,7 +372,116 @@ def build_operational_anomalies(fin, tanggal_iso, yctx):
                     f"Indikasi perubahan pola kunjungan (berkelompok vs sendiri)."
                 )
 
+    attach_today = fin.get('attach_rate', 0) or 0
+    if attach_today > 1.5:
+        anomalies.append(
+            f"Rasio minuman/makanan {attach_today*100:.0f}% (di atas 150%) tidak wajar. "
+            f"Kemungkinan kesalahan input kasir atau event khusus. Verifikasi data sebelum dijadikan dasar analisis."
+        )
+
+    try:
+        recent = db.get_recent_price_anomalies(tanggal_iso, days=3)
+        counts = {}
+        for row in recent:
+            for a in (row.get('price_anomalies') or []):
+                prod = a.get('product', '')
+                if prod:
+                    counts[prod] = counts.get(prod, 0) + 1
+        for a in (fin.get('price_anomalies') or []):
+            prod = a.get('product', '')
+            if prod and counts.get(prod, 0) >= 2:
+                anomalies.append(
+                    f"Harga '{prod}' menyimpang {a['gap_pct']:+.0f}% dari acuan, terjadi berulang selama {counts[prod]+1} hari. "
+                    f"Kemungkinan harga acuan yang perlu diperbarui dari {_fmt(a['master_price'])} ke {_fmt(a['avg_price'])} (bukan salah input kasir)."
+                )
+    except Exception:
+        pass
+
     return anomalies
+
+
+def build_historical_context(tanggal_iso, days=7):
+    empty_meta = {
+        'n_days': 0, 'avg_revenue': 0.0, 'avg_overhead': 0.0,
+        'avg_op_profit': 0.0, 'avg_hpp_ratio': 0.0,
+    }
+    try:
+        tgl = datetime.strptime(tanggal_iso, "%Y-%m-%d").date()
+        from_date = (tgl - timedelta(days=days)).isoformat()
+        to_date = (tgl - timedelta(days=1)).isoformat()
+    except Exception:
+        return "(tanggal tidak valid)", empty_meta
+
+    try:
+        reports = db.get_reports_in_range(from_date, to_date)
+    except Exception:
+        return "(gagal membaca data historis)", empty_meta
+
+    if not reports:
+        return "(belum ada data historis — ini laporan pertama atau data historis belum tersedia)", empty_meta
+
+    lines = [f"KONTEKS HISTORIS ({len(reports)} hari sebelum {tanggal_iso}):"]
+    revenues, overheads, op_profits, hpp_ratios = [], [], [], []
+
+    for r in reports:
+        rev = float(r['revenue'] or 0)
+        hpp = float(r['hpp'] or 0)
+        oh = _get_overhead(r)
+        op = _get_op_profit(r)
+        lines.append(
+            f"- {r['tanggal']}: Pendapatan={_fmt(rev)}, HPP={_fmt(hpp)}, "
+            f"Beban Non-Bahan={_fmt(oh)}, Laba Operasional={_fmt(op)}"
+        )
+        revenues.append(rev)
+        overheads.append(oh)
+        op_profits.append(op)
+        if rev > 0:
+            hpp_ratios.append(hpp / rev)
+
+    avg_rev = sum(revenues) / len(revenues) if revenues else 0
+    avg_oh = sum(overheads) / len(overheads) if overheads else 0
+    avg_op = sum(op_profits) / len(op_profits) if op_profits else 0
+    avg_hpp = sum(hpp_ratios) / len(hpp_ratios) if hpp_ratios else 0
+
+    lines.append("")
+    lines.append(f"Rata-rata Pendapatan: {_fmt(avg_rev)}")
+    lines.append(f"Rata-rata Beban Non-Bahan: {_fmt(avg_oh)}")
+    lines.append(f"Rata-rata Laba Operasional: {_fmt(avg_op)}")
+    if avg_hpp > 0:
+        lines.append(f"Rata-rata rasio HPP: {avg_hpp * 100:.1f}%")
+
+    try:
+        top_menus = db.get_menus_aggregate(from_date, to_date, group_by='matched_name')[:5]
+        if top_menus:
+            lines.append("")
+            lines.append("Lima menu dengan pendapatan tertinggi (periode ini):")
+            for m in top_menus:
+                lines.append(
+                    f"- {m['group_key']}: jumlah={m['total_qty']}, "
+                    f"pendapatan={_fmt(float(m['total_revenue']))}, "
+                    f"laba={_fmt(float(m['total_margin']))}"
+                )
+    except Exception:
+        pass
+
+    try:
+        medians = db.get_expenses_median_by_category(from_date, to_date)
+        if medians:
+            lines.append("")
+            lines.append("Nilai tengah pengeluaran harian per kategori (patokan normal):")
+            for cat, med in medians.items():
+                lines.append(f"- {cat}: {_fmt(med)}")
+    except Exception:
+        pass
+
+    meta = {
+        'n_days': len(reports),
+        'avg_revenue': avg_rev,
+        'avg_overhead': avg_oh,
+        'avg_op_profit': avg_op,
+        'avg_hpp_ratio': avg_hpp,
+    }
+    return "\n".join(lines), meta
 
 
 def compute_bep(fin, hist_meta):
@@ -378,10 +512,11 @@ def classify_situation(fin, bep_info, hist_meta):
     if rev <= 0:
         return 'KRITIS'
 
-    if hpp_ratio > 0.68:
+    if hpp_ratio > 0.65:
         return 'HPP_TINGGI'
-    if hist_hpp > 0 and hpp_ratio > hist_hpp + 0.03 and hpp_ratio > 0.60:
-        return 'HPP_TINGGI'
+
+    if hist_hpp > 0.60 and hpp_ratio > 0.60 and hist_meta.get('n_days', 0) >= 3:
+        return 'HPP_KRONIS'
 
     if op > 0 and cash < 0 and abs(cash) > op * 0.5:
         return 'STOK_BERLEBIH'

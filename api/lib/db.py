@@ -664,3 +664,20 @@ def get_expense_item_median(from_date, to_date, min_days=3):
         with conn.cursor() as cur:
             cur.execute(sql, (_coerce_date(from_date), _coerce_date(to_date), int(min_days)))
             return {row['sub_key']: float(row['median']) for row in cur.fetchall() if row['sub_key']}
+
+
+@_wrap_db_errors
+def get_recent_price_anomalies(tanggal_iso, days=3):
+    sql = """
+        SELECT tanggal, price_anomalies
+        FROM reports
+        WHERE tanggal < %s
+          AND price_anomalies IS NOT NULL
+          AND jsonb_array_length(price_anomalies) > 0
+        ORDER BY tanggal DESC
+        LIMIT %s
+    """
+    with _get_pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (_coerce_date(tanggal_iso), int(days)))
+            return cur.fetchall()

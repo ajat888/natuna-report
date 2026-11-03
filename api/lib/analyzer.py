@@ -29,7 +29,8 @@ SYSTEM_PROMPT = (
     "- Jika situasi = Sehat: Diagnosis HARUS DIAWALI 'Operasional hari ini sehat'. DILARANG memakai kata 'masalah'. "
     "- Jika situasi = Belanja Stok Berlebih: Fokus pada belanja stok menumpuk yang bikin kas negatif. "
     "- Jika situasi = Kunjungan Rendah: Fokus pendapatan di bawah titik impas. "
-    "- Jika situasi = HPP Terlalu Tinggi: Fokus HPP melebihi batas. "
+    "- Jika situasi = HPP Terlalu Tinggi (akut, 1 hari): Fokus HPP melebihi batas hari ini. "
+    "- Jika situasi = HPP Tinggi Berkelanjutan (kronis): Fokus perbaikan margin struktural 3-7 hari (harga, porsi, negosiasi pemasok). Boleh sebut kas positif tetapi HPP kronis adalah masalah utama. DILARANG memakai kata 'sehat' sebagai status utama. "
     "- Jika situasi = Biaya Operasional Tinggi: Fokus beban non-bahan membengkak. "
     "- Jika situasi = Margin Tipis: Fokus campuran menu bikin laba tipis. "
     "- Jika situasi = Kritis: Fokus penyelamatan kas darurat. "
@@ -39,47 +40,27 @@ SYSTEM_PROMPT = (
     "ATURAN PERBANDINGAN (FATAL): "
     "Jika ada PERBANDINGAN DENGAN LAPORAN SEBELUMNYA, WAJIB sebut minimal 1 delta angka di headline atau diagnosis. "
     "Jangan pernah membandingkan kategori belanja dengan total pengeluaran (apel vs jeruk). Hanya setara dengan setara. "
-    "Jika ada AKSI KEMARIN, sebutkan apakah dampaknya terlihat di data hari ini (jangan diamkan). "
+    "ATURAN VERIFIKASI AKSI KEMARIN (FATAL): "
+    "Jika ada STATUS AKSI KEMARIN dengan status BELUM DIEKSEKUSI atau TIDAK DIVERIFIKASI: JANGAN klaim aksi tersebut berhasil atau berkontribusi. "
+    "Cukup sebut bahwa target belum tercapai dan rekomendasi tetap berlaku. "
+    "Jika status TEREKSKUSI: boleh sebut sebagai konteks tapi jangan klaim kausalitas berlebihan. "
     "HARUS MENGEMBALIKAN OUTPUT BERUPA FORMAT JSON YANG VALID SEPERTI YANG DIMINTA."
 )
 
 NEW_MENU_KWS = ('tambahkan menu', 'tambah menu', 'menu baru', 'perkenalkan menu', 'memperkenalkan menu')
 HARGA_UP_KWS = ('naikkan harga', 'tingkatkan harga', 'menaikkan harga', 'meningkatkan harga', 'sesuaikan harga jual', 'sesuaikan harga')
 DISCOUNT_KWS = ('diskon', 'potongan harga', 'harga khusus')
-
+REMOVE_MENU_KWS = ('hapus menu', 'kurangi menu', 'hilangkan menu', 'pangkas menu', 'kurangi item', 'hapus item', 'menghapus menu', 'mengurangi menu')
 PRUNE_KWS = ('pangkas', 'hapus', 'kurangi menu', 'evaluasi menu', 'menata ulang', 'kurangi biaya', 'potong menu')
 GROWTH_KWS = ('tingkatkan', 'kembangkan', 'pertahankan', 'pertumbuhan', 'pelanggan', 'kunjungan', 'promosi', 'loyalitas', 'naikkan pendapatan', 'pelanggan lama')
 
-MODEL_CONTEXT_WINDOW = {
-    "llama-3.3-70b-versatile": 131072,
-    "llama-3.1-8b-instant": 131072,
-    "deepseek-r1-distill-llama-70b": 131072,
-    "qwen-qwq-32b": 131072,
-    "meta-llama/llama-4-maverick-17b-128e-instruct": 131072,
-    "meta-llama/llama-4-scout-17b-16e-instruct": 131072,
-    "openai/gpt-oss-120b": 131072,
-    "mixtral-8x7b-32768": 32768,
-    "llama3-70b-8192": 8192,
-    "llama3-8b-8192": 8192,
-    "gemma2-9b-it": 8192,
-}
-
-PREFERRED_MODELS = [
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "deepseek-r1-distill-llama-70b",
-    "qwen-qwq-32b",
-    "meta-llama/llama-4-maverick-17b-128e-instruct",
-    "meta-llama/llama-4-scout-17b-16e-instruct",
-    "openai/gpt-oss-120b",
-    "mixtral-8x7b-32768",
-    "llama3-70b-8192",
-    "llama3-8b-8192",
-    "gemma2-9b-it",
-]
-
-MAX_PROMPT_CHARS = 12000
-MAX_COMPLETION_TOKENS = 1500
+STRATEGY_MARKERS_RE = re.compile(
+    r'(\b(?:prioritas|rencana|langkah|fokus)\s+3[-\s]7\s+hari\b'
+    r'|\bdalam\s+3[-\s]7\s+hari\b'
+    r'|\btiga\s+sampai\s+tujuh\s+hari\b'
+    r'|\bstrategi\s+3[-\s]7\s+hari\b)',
+    re.IGNORECASE,
+)
 
 
 def _fmt(n):
@@ -154,38 +135,177 @@ def _parse_rp(tok):
         return None
 
 
-def _fix_comparison_contradictions(text):
+def _text_overlap_ratio(text1, text2, min_word_len=3):
+    if not text1 or not text2:
+        return 0
+    def norm_words(t):
+        words = _norm_text(t).split()
+        return set(w for w in words if len(w) >= min_word_len)
+    w1 = norm_words(text1)
+    w2 = norm_words(text2)
+    if not w1 or not w2:
+        return 0
+    return len(w1 & w2) / len(w1 | w2)
+
+
+def _strip_strategy_from_diagnosis(diagnosis, strategy):
+    if not diagnosis:
+        return diagnosis, strategy
+    m = STRATEGY_MARKERS_RE.search(diagnosis)
+    if not m:
+        return diagnosis, strategy
+    idx = m.start()
+    if idx < 15:
+        return diagnosis, strategy
+    strategy_part = diagnosis[idx:]
+    clean_diag = diagnosis[:idx].rstrip(' .,;:')
+    if not clean_diag:
+        return diagnosis, strategy
+    if not strategy or len(strategy) < 40:
+        return clean_diag, strategy_part
+    return clean_diag, strategy
+
+
+def _sanitize_numeric_claims(text, fin, bep_info):
     if not text or not isinstance(text, str):
         return text
 
-    rp_pattern = r'rp\s*[\d.,]+\s*(?:juta|jt|rb|ribu)?'
-    up_words = r'(melampaui|melebihi|lebih\s+tinggi\s+dari|lebih\s+besar\s+dari)'
-    dn_words = r'(di\s+bawah|lebih\s+rendah\s+dari|kurang\s+dari)'
+    replacements = [
+        (r'(laba operasional)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*-?[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["operating_profit"])}'),
+        (r'(kas bersih)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*-?[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["cash_flow"])}'),
+        (r'(total uang keluar)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["expenses"])}'),
+        (r'(total pengeluaran)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["expenses"])}'),
+        (r'(laba kotor)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["gross_profit"])}'),
+        (r'(total pendapatan)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["revenue"])}'),
+        (r'(pendapatan hari ini)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["revenue"])}'),
+        (r'(hpp|harga pokok penjualan)(\s+(?:mencapai|sebesar|senilai|sejumlah|menjadi))?\s+Rp\s*[\d.,]+',
+         lambda m: f'{m.group(1)}{m.group(2) or ""} {_fmt(fin["hpp"])}'),
+    ]
 
-    def _replace(pat, checker, text_in):
-        result = []
-        last = 0
-        for match in re.finditer(pat, text_in, re.IGNORECASE):
-            a_tok, b_tok = match.group(1), match.group(3)
-            a_val, b_val = _parse_rp(a_tok), _parse_rp(b_tok)
-            if a_val is None or b_val is None:
-                continue
-            if not checker(a_val, b_val):
-                continue
-            replacement = f"{a_tok} (patokan {b_tok})"
-            result.append(text_in[last:match.start()])
-            result.append(replacement)
-            last = match.end()
-        result.append(text_in[last:])
-        return ''.join(result)
-
-    pat_up = rf'({rp_pattern})\s*[^.]*?{up_words}\s*[^.]*?({rp_pattern})'
-    pat_dn = rf'({rp_pattern})\s*[^.]*?{dn_words}\s*[^.]*?({rp_pattern})'
-
-    text = _replace(pat_up, lambda a, b: a < b, text)
-    text = _replace(pat_dn, lambda a, b: a > b, text)
+    for pattern, repl in replacements:
+        text = re.sub(pattern, repl, text, flags=re.IGNORECASE)
 
     return text
+
+
+def _check_remove_action_safety(action_text, fin):
+    if not _has_any(action_text, REMOVE_MENU_KWS):
+        return True, None
+    total_rev = fin['revenue']
+    if total_rev <= 0:
+        return True, None
+    m = re.search(r'(?:qty|terjual|sebanyak)\s+(\d+)', action_text.lower())
+    threshold_qty = int(m.group(1)) if m else 1
+    high_value = []
+    for p in fin['per_menu']:
+        if p['qty'] <= threshold_qty and total_rev > 0:
+            pct = p['revenue'] / total_rev * 100
+            if pct >= 5.0 and p['revenue'] >= 50000:
+                high_value.append(f"{p['product']} ({_fmt(p['revenue'])}, {pct:.0f}%)")
+    if high_value:
+        return False, high_value
+    return True, None
+
+
+def _validate_restriction_action(action_text, fin):
+    m = re.search(r'(\d+)\s*%', action_text)
+    if not m:
+        return True, None
+    pct = int(m.group(1)) / 100
+    if pct >= 1.0:
+        return True, None
+
+    target_cat = None
+    for cat in fin['expense_breakdown']:
+        if cat.lower() in action_text.lower():
+            target_cat = cat
+            break
+    if not target_cat:
+        if 'dapur' in action_text.lower() or 'bahan' in action_text.lower():
+            target_cat = next((c for c in fin['expense_breakdown'] if c.lower() in ('dapur', 'bahan')), None)
+    if not target_cat:
+        return True, None
+
+    target_exp = fin['expense_breakdown'][target_cat]['total']
+    other = fin['expenses'] - target_exp
+    new_total = target_exp * pct + other
+    if fin['revenue'] > 0 and new_total > fin['revenue'] * 1.02:
+        deficit = new_total - fin['revenue']
+        return False, (
+            f"Catatan: dengan target {int(pct*100)}%, total belanja masih {_fmt(new_total)}, "
+            f"di atas pendapatan {_fmt(fin['revenue'])} (defisit {_fmt(deficit)}). Perlu pengurangan lebih agresif atau tambahan pendapatan."
+        )
+    return True, None
+
+
+def _ensure_diagnosis_mentions_signals(diagnosis, anomalies, yctx):
+    if not diagnosis:
+        return diagnosis
+    if not anomalies and not (yctx and yctx.get('movers')):
+        return diagnosis
+    d_norm = _norm_text(diagnosis)
+    missing = []
+    for a in (anomalies or []):
+        keyword_match = re.search(r'(Belanja \w+|Volume item|Rasio minuman|Harga \')', a)
+        if keyword_match:
+            if _norm_text(keyword_match.group(1)) not in d_norm:
+                missing.append(a[:80] + ('...' if len(a) > 80 else ''))
+    if yctx and yctx.get('has_previous'):
+        for m in (yctx.get('movers') or [])[:2]:
+            if _norm_text(m['menu']) not in d_norm:
+                missing.append(f"{m['menu']} {'naik' if m['diff'] > 0 else 'turun'} dari {m['prev']} ke {m['today']}")
+    if missing:
+        return diagnosis.rstrip(' .,') + ". Sinyal yang perlu dicek: " + "; ".join(missing[:2]) + "."
+    return diagnosis
+
+
+def _build_fallback_headline(fin, bep_info, yctx, situation):
+    parts = []
+    if yctx and yctx.get('has_previous'):
+        prev_rev = yctx.get('prev_revenue', 0)
+        if prev_rev > 0:
+            delta_pct = (fin['revenue'] - prev_rev) / prev_rev * 100
+            arrow = "naik" if delta_pct >= 0 else "turun"
+            parts.append(f"Pendapatan {arrow} {abs(delta_pct):.0f}% vs kemarin")
+    if fin['cash_flow'] < 0:
+        parts.append(f"kas minus {_fmt(fin['cash_flow'])}")
+    else:
+        parts.append(f"kas positif {_fmt(fin['cash_flow'])}")
+    directives = {
+        'SEHAT': 'fokus pertahankan momentum dan program kunjungan ulang',
+        'HPP_TINGGI': 'fokus turunkan HPP dan tinjau margin menu',
+        'HPP_KRONIS': 'fokus perbaikan margin struktural 3-7 hari',
+        'STOK_BERLEBIH': 'fokus stop belanja bahan berlebih',
+        'TRAFFIC_PROBLEM': 'fokus tarik kunjungan lewat promosi dan paket',
+        'COST_PROBLEM': 'fokus audit beban operasional',
+        'MARGINAL': 'fokus perbaiki campuran menu',
+        'KRITIS': 'fokus penyelamatan kas darurat',
+    }
+    parts.append(directives.get(situation, 'fokus perbaikan operasional'))
+    return ', '.join(parts) + '.'
+
+
+def _build_action_verification_text(yctx):
+    if not yctx or not yctx.get('verifications'):
+        return ""
+    status_map = {
+        'likely_executed': 'TEREKSKUSI',
+        'partial': 'SEBAGIAN',
+        'likely_not_executed': 'BELUM DIEKSEKUSI',
+        'unknown': 'TIDAK DIVERIFIKASI',
+    }
+    lines = ["VERIFIKASI AKSI KEMARIN:"]
+    for v in yctx['verifications']:
+        lines.append(f"- Aksi: \"{v['action']}\"")
+        lines.append(f"  Status: {status_map.get(v['status'], v['status'])}. {v['detail']}")
+    return '\n'.join(lines)
 
 
 def _build_math_facts(fin):
@@ -217,9 +337,29 @@ def _fallback_actions(fin, situation, bep_info):
             {'aksi': 'Catat menu yang sering dipesan bersamaan, lalu buat paket dengan harga khusus lebih hemat.', 'alasan': 'Meningkatkan nilai transaksi per pelanggan.'},
             {'aksi': 'Evaluasi jam ramai dan sepi, lalu jadwalkan promosi ringan di jam sepi.', 'alasan': 'Meningkatkan kunjungan di jam sepi.'},
         ]
-    if situation == 'STOK_BERLEBIH':
+    if situation == 'HPP_KRONIS':
+        worst = sorted(
+            [p for p in fin['per_menu'] if p.get('margin_pct') is not None and p['qty'] > 0],
+            key=lambda p: p['margin_pct']
+        )[:3]
+        worst_names = ', '.join(f"{p['product']} ({p['margin_pct']:.0f}%)" for p in worst) if worst else "menu margin terendah"
         return [
-            {'aksi': 'Batasi belanja bahan besok maksimal 80% dari pembelian hari ini.', 'alasan': 'Menyesuaikan belanja dengan penjualan aktual.'},
+            {'aksi': f'Tinjau harga/porsi menu margin terendah: {worst_names}. Pertimbangkan kenaikan 5-10% atau reformulasi porsi.', 'alasan': 'HPP kronis di atas 60%; perbaikan menu-level paling berdampak.'},
+            {'aksi': 'Negosiasi harga pemasok untuk 3 bahan paling mahal (ayam, beras, minyak) dengan target diskon 5-10%.', 'alasan': 'Menurunkan HPP dasar tanpa mengubah volume.'},
+            {'aksi': 'Dorong penjualan menu margin di atas 40% (minuman, snack) lewat rekomendasi kasir dan paket.', 'alasan': 'Menaikkan margin rata-rata keseluruhan.'},
+            {'aksi': 'Evaluasi menu dengan margin di bawah 15% atau qty rendah; reformulasi atau penggantian.', 'alasan': 'Mengurangi drag margin.'},
+        ]
+    if situation == 'STOK_BERLEBIH':
+        deficit = fin['expenses'] - fin['revenue']
+        daily = fin['bahan_purchases']
+        if daily > 0 and deficit > 0:
+            target_amount = max(0, daily - deficit - 50000)
+            target_pct = min(90, max(50, int(target_amount / daily * 100)))
+        else:
+            target_pct = 70
+            target_amount = int(daily * target_pct / 100) if daily else 0
+        return [
+            {'aksi': f'Batasi belanja bahan besok menjadi {_fmt(target_amount)} ({target_pct}% dari hari ini) agar kas tidak minus.', 'alasan': f'Belanja bahan {_fmt(daily)} hari ini menyumbang kas minus {_fmt(deficit)}. Reduksi ke {target_pct}% menutup defisit.'},
             {'aksi': 'Audit stok fisik akhir hari untuk bahan protein dan sayur; catat sisa.', 'alasan': 'Mencegah pemborosan dan pembelian dobel.'},
             {'aksi': 'Olah bahan berlebih menjadi paket menu hemat hari ini saja.', 'alasan': 'Mengubah stok menjadi pendapatan sebelum rusak.'},
             {'aksi': 'Tunda pembelian bahan kering non-urgent hingga stok menipis.', 'alasan': 'Menjaga arus kas tetap positif.'},
@@ -261,56 +401,59 @@ def _fallback_actions(fin, situation, bep_info):
 
 
 def _fallback_strategi(fin, situation, bep_info):
-    rev = fin['revenue']
-    cash = fin['cash_flow']
-    gap_pct = bep_info['gap_pct']
-
-    base = f"Pendapatan {_fmt(rev)} dengan kas bersih {_fmt(cash)} ({gap_pct:+.1f}% dari total uang keluar). "
-
     if situation == 'SEHAT':
-        return base + "Prioritas 3-7 hari ke depan: sesuaikan harga menu margin tertinggi maksimal 5% sambil pantau volume; bangun program kunjungan ulang; uji paket hemat di jam sepi."
+        return "Rencana 3-7 hari: (1) tinjau harga menu margin tertinggi 5% bertahap sambil pantau volume harian, (2) aktifkan program kunjungan ulang pelanggan, (3) uji paket hemat di jam sepi. Pantau volume setiap perubahan sebelum menaikkan harga berikutnya."
+    if situation == 'HPP_KRONIS':
+        return "Rencana 3-7 hari: (1) tinjau ulang harga/porsi 3 menu margin terendah, (2) negosiasi pemasok bahan utama (ayam, beras, minyak), (3) dorong penjualan menu margin tinggi lewat kasir dan paket. Target: HPP turun di bawah 58% dalam 2 minggu."
     if situation == 'STOK_BERLEBIH':
-        return base + "Prioritas 3-7 hari ke depan: batasi belanja bahan; audit stok fisik; olah bahan berlebih menjadi paket hemat; tunda pembelian bahan kering. Target: kas positif dalam 3 hari."
+        return "Rencana 3-7 hari: (1) batasi belanja bahan sesuai target, (2) audit stok fisik, (3) olah bahan berlebih menjadi paket hemat, (4) tunda pembelian bahan kering non-urgent. Target: kas positif dalam 3 hari."
     if situation == 'TRAFFIC_PROBLEM':
-        return base + "Prioritas 3-7 hari ke depan: aktifkan pelanggan lama; buka jam promo di jam sepi; sebar konten promosi. Target: kunjungan naik 20%."
+        return "Rencana 3-7 hari: (1) aktifkan pelanggan lama, (2) buka jam promo di jam sepi, (3) sebar konten promosi mingguan. Target: kunjungan naik 20%."
     if situation == 'HPP_TINGGI':
-        return base + "Prioritas 3-7 hari ke depan: negosiasi harga bahan; standarisasi porsi; perbarui harga jual secara bertahap. Target: HPP turun di bawah 55%."
+        return "Rencana 3-7 hari: (1) negosiasi harga bahan, (2) standarisasi porsi, (3) perbarui harga jual menu bermasalah secara bertahap. Target: HPP turun di bawah 55%."
     if situation == 'COST_PROBLEM':
-        return base + "Prioritas 3-7 hari ke depan: audit listrik, gas, kemasan; bandingkan pemasok; tunda pembelian non-urgent. Target: beban turun 10%."
+        return "Rencana 3-7 hari: (1) audit listrik, gas, kemasan, (2) bandingkan pemasok, (3) tunda pembelian non-urgent. Target: beban turun 10%."
     if situation == 'MARGINAL':
-        return base + "Prioritas 3-7 hari ke depan: dorong menu margin tinggi; kurangi promosi menu margin rendah; evaluasi menu jarang terjual. Target: margin naik 5%."
-    return base + "Prioritas 3-7 hari ke depan: hentikan pembelian non-urgent; fokus jual menu margin tinggi; negosiasi tempo bayar; promosi cepat. Target: kas positif dalam 48 jam."
+        return "Rencana 3-7 hari: (1) dorong menu margin tinggi, (2) kurangi promosi menu margin rendah, (3) evaluasi menu jarang terjual. Target: margin rata-rata naik 5%."
+    return "Rencana 3-7 hari: (1) hentikan pembelian non-urgent, (2) fokus jual menu margin tinggi, (3) negosiasi tempo bayar pemasok, (4) promosi cepat ke pelanggan lama. Target: kas positif dalam 48 jam."
 
 
-def _sehat_growth_headline(fin, bep_info):
-    return (
-        f"Operasional hari ini sehat: kas bersih {_fmt(fin['cash_flow'])} "
-        f"({bep_info['gap_pct']:+.1f}% dari total uang keluar). "
-        f"Fokus: pertahankan momentum lewat promosi menu primadona dan program kunjungan ulang pelanggan."
-    )
+def _fix_analysis(data, fin, situation, bep_info, yctx=None, anomalies=None):
+    for key in ('headline', 'diagnosis', 'strategi'):
+        if data.get(key):
+            data[key] = _clean(data[key])
+    if isinstance(data.get('instruksi'), list):
+        for item in data['instruksi']:
+            if item.get('aksi'):
+                item['aksi'] = _clean(item['aksi'])
+            if item.get('alasan'):
+                item['alasan'] = _clean(item['alasan'])
 
+    diag = data.get('diagnosis') or ''
+    strat = data.get('strategi') or ''
+    diag, strat = _strip_strategy_from_diagnosis(diag, strat)
+    data['diagnosis'] = diag
+    data['strategi'] = strat
 
-def _fix_analysis(data, fin, situation, bep_info, yctx=None):
-    instruksi = data.get('instruksi')
-    if not isinstance(instruksi, list):
-        instruksi = []
-
-    cleaned = []
+    instruksi = data.get('instruksi') if isinstance(data.get('instruksi'), list) else []
+    cleaned_actions = []
     for it in instruksi:
         if not isinstance(it, dict):
             continue
         aksi = (it.get('aksi') or '').strip()
         alasan = (it.get('alasan') or '').strip()
-        if aksi and alasan:
-            cleaned.append({'aksi': aksi, 'alasan': alasan})
-    instruksi = cleaned
-
-    filtered = []
-    for it in instruksi:
-        if _has_any(it['aksi'], NEW_MENU_KWS):
+        if not (aksi and alasan):
             continue
-        filtered.append(it)
-    instruksi = filtered
+        if _has_any(aksi, NEW_MENU_KWS):
+            continue
+        safe, blocked = _check_remove_action_safety(aksi, fin)
+        if not safe:
+            continue
+        valid, reason = _validate_restriction_action(aksi, fin)
+        if not valid and reason:
+            alasan = (alasan + " " if alasan else "") + reason
+        cleaned_actions.append({'aksi': aksi, 'alasan': alasan})
+    instruksi = cleaned_actions
 
     harga_up_menus = set()
     discount_menus = set()
@@ -320,7 +463,6 @@ def _fix_analysis(data, fin, situation, bep_info, yctx=None):
             harga_up_menus |= menus
         if _has_any(it['aksi'], DISCOUNT_KWS):
             discount_menus |= menus
-
     conflicts = harga_up_menus & discount_menus
     if conflicts:
         kept = []
@@ -336,28 +478,54 @@ def _fix_analysis(data, fin, situation, bep_info, yctx=None):
             if len(instruksi) >= 4:
                 break
             instruksi.append(fb)
-
-    instruksi = instruksi[:4]
-    data['instruksi'] = instruksi
-
-    diag_n = _norm_text(data.get('diagnosis'))
-    strat_n = _norm_text(data.get('strategi'))
-    if diag_n and strat_n and diag_n == strat_n:
-        data['strategi'] = _fallback_strategi(fin, situation, bep_info)
+    data['instruksi'] = instruksi[:4]
 
     for key in ('headline', 'diagnosis', 'strategi'):
         if data.get(key):
-            data[key] = _fix_comparison_contradictions(data[key])
-    for it in data.get('instruksi', []):
-        if it.get('aksi'):
-            it['aksi'] = _fix_comparison_contradictions(it['aksi'])
+            data[key] = _sanitize_numeric_claims(data[key], fin, bep_info)
+    for it in data['instruksi']:
         if it.get('alasan'):
-            it['alasan'] = _fix_comparison_contradictions(it['alasan'])
+            it['alasan'] = _sanitize_numeric_claims(it['alasan'], fin, bep_info)
+
+    if _text_overlap_ratio(data.get('diagnosis'), data.get('strategi')) > 0.6:
+        data['strategi'] = _fallback_strategi(fin, situation, bep_info)
+
+    data['diagnosis'] = _ensure_diagnosis_mentions_signals(data.get('diagnosis'), anomalies, yctx)
 
     if situation == 'SEHAT':
+        diag = data.get('diagnosis') or ''
+        forbidden = ['akar masalah', 'masalah utama', 'masalah utama adalah']
+        has_forbidden = any(w in diag.lower() for w in forbidden)
+        if has_forbidden or not diag.lower().startswith(('operasional', 'kondisi', 'hari ini')):
+            data['diagnosis'] = (
+                f"Operasional hari ini sehat: laba operasional {_fmt(fin['operating_profit'])} "
+                f"dan kas bersih {_fmt(fin['cash_flow'])}. {diag}"
+            ).strip()
         h = data.get('headline') or ''
         if _has_any(h, PRUNE_KWS) and not _has_any(h, GROWTH_KWS):
-            data['headline'] = _sehat_growth_headline(fin, bep_info)
+            data['headline'] = (
+                f"Operasional hari ini sehat: kas bersih {_fmt(fin['cash_flow'])} "
+                f"({bep_info['gap_pct']:+.1f}% dari total uang keluar). "
+                f"Fokus: pertahankan momentum lewat promosi menu primadona dan program kunjungan ulang pelanggan."
+            )
+
+    if situation == 'HPP_KRONIS':
+        diag = data.get('diagnosis') or ''
+        diag_lower = diag.lower()
+        if 'hpp' not in diag_lower and 'margin' not in diag_lower:
+            data['diagnosis'] = (
+                f"Operasional hari ini berjalan dengan HPP kronis di atas 60% "
+                f"(rasio HPP hari ini {bep_info.get('hpp_ratio', 0)*100:.0f}%). Margin per menu tipis. {diag}"
+            ).strip()
+
+    if not data.get('headline'):
+        data['headline'] = _build_fallback_headline(fin, bep_info, yctx, situation)
+
+    if not data.get('kondisi'):
+        data['kondisi'] = "Rugi" if fin['cash_flow'] < 0 else "Untung"
+
+    if not data.get('strategi'):
+        data['strategi'] = _fallback_strategi(fin, situation, bep_info)
 
     return data
 
@@ -386,25 +554,28 @@ def _get_available_models(client):
         models_response = client.models.list()
         available_ids = [m.id for m in models_response.data]
     except Exception:
-        return PREFERRED_MODELS
+        return ["llama-3.1-8b-instant", "llama3-70b-8192"]
 
-    valid = []
-    for mid in PREFERRED_MODELS:
-        if mid in available_ids:
-            valid.append(mid)
+    preferred_order = [
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192",
+        "llama-3.3-70b-versatile"
+    ]
 
-    if not valid:
+    valid_models = []
+    for pm in preferred_order:
+        if pm in available_ids:
+            valid_models.append(pm)
+
+    if not valid_models:
         for mid in available_ids:
-            low = mid.lower()
-            if any(x in low for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus']):
-                continue
-            valid.append(mid)
-        valid.sort(key=lambda m: MODEL_CONTEXT_WINDOW.get(m, 8192), reverse=True)
+            if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus', 'qwen', 'gpt-oss']):
+                valid_models.append(mid)
 
-    if not valid:
-        valid = PREFERRED_MODELS
+    if not valid_models:
+        valid_models = ["llama-3.1-8b-instant"]
 
-    return valid
+    return valid_models
 
 
 def _extract_json(text):
@@ -422,53 +593,33 @@ def _extract_json(text):
     return None
 
 
-def _estimate_tokens(text):
-    return len(text) // 3.5
+def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
+                      bep_info, situation, situation_label, hist_text, learning_ctx,
+                      yctx=None, anomalies=None):
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
-
-def _trim_prompt(prompt, max_chars):
-    if len(prompt) <= max_chars:
-        return prompt
-    return prompt[:max_chars] + '\n... (prompt dipotong karena batas konteks)'
-
-
-def _is_context_overflow(err):
-    s = str(err).lower()
-    return (
-        'context_length_exceeded' in s
-        or 'reduce the length' in s
-        or 'maximum context length' in s
-        or 'context window' in s
-    )
-
-
-def _build_prompt(fin, classification, tanggal_panjang, bep_info, situation_label,
-                  hist_text, learning_ctx, yctx, anomalies):
     menu_lines = []
-    top_menus = sorted(
-        [x for x in fin['per_menu'] if x['margin'] is not None],
-        key=lambda x: x['margin'], reverse=True
-    )[:10]
+    top_menus = sorted([x for x in fin['per_menu'] if x['margin'] is not None], key=lambda x: x['margin'], reverse=True)[:15]
 
     for p in top_menus:
         up = p.get('unit_price') or 0
         mp = p.get('master_price')
         mp_str = _fmt(mp) if mp else '-'
         menu_lines.append(
-            f"- {p['product']}: qty={p['qty']}, harga={_fmt(up)}, "
-            f"acuan={mp_str}, laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
+            f"- {p['product']}: qty={p['qty']}, harga_jual={_fmt(up)}, "
+            f"acuan={mp_str}, total_pendapatan={_fmt(p['revenue'])}, laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
         )
 
     cls_lines = []
     for cat, items in classification.items():
         if not items:
             continue
-        names = ', '.join(f"{i['product']}({i['qty']})" for i in items[:3])
+        names = ', '.join(f"{i['product']} (qty {i['qty']})" for i in items[:5])
         cls_lines.append(f"- {cat}: {names}")
 
     exp_lines = []
     for cat, data in fin['expense_breakdown'].items():
-        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:2])
+        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:3])
         exp_lines.append(f"- {cat} ({_fmt(data['total'])}): {items_str}")
 
     status_cash = "NEGATIF" if fin['cash_flow'] < 0 else "POSITIF"
@@ -478,10 +629,11 @@ def _build_prompt(fin, classification, tanggal_panjang, bep_info, situation_labe
     anomaly_lines = _build_anomaly_lines(fin)
     math_facts = _build_math_facts(fin)
 
-    hist_text_short = _truncate(hist_text, 500)
-    learning_text_short = _truncate(format_learning_for_prompt(learning_ctx), 500)
+    hist_text_short = _truncate(hist_text, 800)
+    learning_text_short = _truncate(format_learning_for_prompt(learning_ctx), 800)
+
     yctx_text = (yctx or {}).get('text') or '(belum ada laporan sebelumnya)'
-    yctx_text = _truncate(yctx_text, 900)
+    verification_text = _build_action_verification_text(yctx)
     anomaly_signals = anomalies or []
 
     prompt = f"""
@@ -491,6 +643,7 @@ RINGKASAN KEUANGAN (FAKTA):
 - Pendapatan: {_fmt(fin['revenue'])}
 - Pengeluaran: {_fmt(fin['expenses'])}
 - KAS BERSIH: {_fmt(fin['cash_flow'])} ({status_cash})
+- Rasio HPP: {hpp_ratio_pct:.1f}%
 - Rasio minuman/makanan: {attach_rate_pct:.1f}%
 
 MATEMATIKA YANG SUDAH DIHITUNG OLEH SISTEM:
@@ -500,26 +653,28 @@ MATEMATIKA YANG SUDAH DIHITUNG OLEH SISTEM:
 PERBANDINGAN DENGAN LAPORAN SEBELUMNYA:
 {yctx_text}
 
+{verification_text if verification_text else "(belum ada aksi yang perlu diverifikasi)"}
+
 SINYAL OPERASIONAL (WAJIB DIBAHAS DI DIAGNOSIS JIKA ADA):
-{chr(10).join('- ' + a for a in anomaly_signals[:5]) if anomaly_signals else '- tidak ada'}
+{chr(10).join('- ' + a for a in anomaly_signals) if anomaly_signals else '- tidak ada'}
 
 ANOMALI TEKNIS (cek input kasir):
-{chr(10).join(anomaly_lines[:5]) if anomaly_lines else '- tidak ada'}
+{chr(10).join(anomaly_lines) if anomaly_lines else '- tidak ada'}
 
 TOTAL UANG KELUAR HARI INI:
 - Total: {_fmt(bep_info['bep'])}
 - Kas Bersih: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
 
 SITUASI: {situation_label}
-RASIO MINUMAN: {attach_rate_pct:.1f}% (Gunakan angka persis ini jika menyebut rasio).
+RASIO HPP: {hpp_ratio_pct:.1f}%
 
-DETAIL MENU (Top 10):
+DETAIL MENU (Top 15):
 {chr(10).join(menu_lines) if menu_lines else '- tidak ada data'}
 
 KLASIFIKASI MENU:
 {chr(10).join(cls_lines) if cls_lines else '- tidak ada'}
 
-RINCIAN PENGELUARAN (Top 2 per Kategori):
+RINCIAN PENGELUARAN (Top 3 per Kategori):
 {chr(10).join(exp_lines) if exp_lines else '- tidak ada'}
 
 HISTORIS:
@@ -532,22 +687,23 @@ TUGAS:
 Hasilkan JSON PERSIS (Bahasa Indonesia, tanpa kata Inggris):
 {{
   "kondisi": "Rugi" atau "Untung",
-  "headline": "1 kalimat tajam menyebut Total Uang Keluar, kas bersih, dan 1 arahan utama. Jika ada PERBANDINGAN, sebut minimal 1 delta angka.",
-  "diagnosis": "2-3 kalimat. Ikuti aturan konsistensi status. Jika ada SINYAL OPERASIONAL, wajib bahas. Jika ada AKSI KEMARIN, evaluasi dampaknya.",
+  "headline": "1 kalimat tajam menyebut kas bersih dan arahan utama. WAJIB sebut 1 delta jika ada PERBANDINGAN.",
+  "diagnosis": "2-3 kalimat FAKTA tentang kondisi hari ini. JANGAN masukkan rencana ke depan. Jika ada SINYAL OPERASIONAL, wajib bahas. Jika ada VERIFIKASI AKSI KEMARIN, sebutkan status singkat.",
   "instruksi": [
-    {{"aksi": "Tindakan taktis spesifik", "alasan": "Kenapa"}},
+    {{"aksi": "Tindakan taktis spesifik hari ini/besok", "alasan": "Kenapa"}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}},
     {{"aksi": "...", "alasan": "..."}}
   ],
-  "strategi": "1 paragraf Konsultan: hubungkan situasi, pola historis, langkah 3-7 hari."
+  "strategi": "1 paragraf RENCANA 3-7 HARI KE DEPAN (bukan ulang diagnosis). Fokus: langkah konkret, target terukur, evaluasi."
 }}
 
 PANDUAN AKSI:
 - Sehat → pertumbuhan (margin absolut, promosi, pelanggan, kunjungan ulang). DILARANG memangkas menu atau biaya.
-- Belanja Stok Berlebih → batasi belanja, audit stok, olah sisa, tunda beli.
+- HPP Tinggi Berkelanjutan (kronis) → perbaikan struktur margin: tinjau harga/porsi menu margin terendah, negosiasi pemasok, dorong menu margin tinggi.
+- Belanja Stok Berlebih → batasi belanja dengan angka spesifik, audit stok, olah sisa.
 - Kunjungan Rendah → promosi, jam promo, aktifkan pelanggan lama.
-- HPP Terlalu Tinggi → negosiasi, reformulasi porsi, sesuaikan harga.
+- HPP Terlalu Tinggi (akut 1 hari) → negosiasi, reformulasi porsi, sesuaikan harga.
 - Biaya Operasional Tinggi → audit listrik, gas, kemasan.
 - Margin Tipis → dorong menu margin tinggi, kurangi margin rendah.
 - Kritis → penyelamatan kas 24 jam.
@@ -555,45 +711,35 @@ PANDUAN AKSI:
 ATURAN TAMBAHAN (FATAL):
 - WAJIB 4 aksi.
 - DILARANG sarankan "tambahkan menu baru X" untuk menu yang SUDAH ADA.
+- DILARANG sarankan hapus/kurangi menu yang menyumbang lebih dari 5% pendapatan hari ini.
 - DILARANG sebut harga/angka yang tidak ada di fakta matematika atas.
 - DILARANG naikkan harga DAN diskon pada menu yang sama.
-- Strategi HARUS BERBEDA dari Diagnosis.
+- Strategi HARUS BERBEDA dari Diagnosis (jangan duplikat).
 - Saat menulis "X melampaui Y", pastikan X > Y. Saat menulis "X di bawah Y", pastikan X < Y.
+- Jika verifikasi aksi kemarin = BELUM DIEKSEKUSI: JANGAN klaim aksi itu berhasil atau berkontribusi.
 """
 
-    return _trim_prompt(prompt.strip(), MAX_PROMPT_CHARS)
-
-
-def _call_groq(client, prompt):
-    models = _get_available_models(client)
+    available_models = _get_available_models(client)
+    data = None
     last_error = None
 
-    for model_name in models:
-        ctx = MODEL_CONTEXT_WINDOW.get(model_name, 8192)
-        if ctx <= 8192:
-            budget = 6000
-        elif ctx <= 32768:
-            budget = 10000
-        else:
-            budget = MAX_PROMPT_CHARS
-
-        current_prompt = _trim_prompt(prompt, budget)
-
+    for model_name in available_models:
         for attempt in range(2):
             try:
                 resp = client.chat.completions.create(
                     model=model_name,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": current_prompt},
+                        {"role": "user", "content": prompt},
                     ],
                     temperature=0.2,
-                    max_tokens=MAX_COMPLETION_TOKENS,
+                    max_tokens=2048,
                 )
                 raw_text = resp.choices[0].message.content
-                parsed = _extract_json(raw_text)
-                if parsed:
-                    return parsed
+                parsed_data = _extract_json(raw_text)
+                if parsed_data:
+                    data = parsed_data
+                    break
                 last_error = Exception("Gagal parse JSON")
                 break
             except RateLimitError as e:
@@ -603,85 +749,14 @@ def _call_groq(client, prompt):
                 last_error = e
                 break
             except Exception as e:
-                if _is_context_overflow(e):
-                    current_prompt = _trim_prompt(prompt, max(2000, budget // 2))
-                    last_error = e
-                    continue
                 last_error = e
                 break
+        if data:
+            break
 
-    raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
+    if data is None:
+        raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
 
-
-def _fallback_analysis(fin, situation, bep_info):
-    headline = (
-        f"Pendapatan hari ini {_fmt(fin['revenue'])} "
-        f"{'di bawah' if bep_info['gap'] < 0 else 'di atas'} "
-        f"Total Uang Keluar {_fmt(bep_info['bep'])} "
-        f"(kas bersih {_fmt(bep_info['gap'])})."
-    )
-    diagnosis = _fallback_strategi(fin, situation, bep_info)
-    return {
-        'kondisi': 'Rugi' if fin['cash_flow'] < 0 else 'Untung',
-        'headline': headline,
-        'diagnosis': diagnosis,
-        'instruksi': _fallback_actions(fin, situation, bep_info),
-        'strategi': _fallback_strategi(fin, situation, bep_info),
-    }
-
-
-def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
-                      bep_info, situation, situation_label, hist_text, learning_ctx,
-                      yctx=None, anomalies=None):
-    client = Groq(api_key=os.environ["GROQ_API_KEY"])
-
-    prompt = _build_prompt(
-        fin, classification, tanggal_panjang, bep_info, situation_label,
-        hist_text, learning_ctx, yctx, anomalies,
-    )
-
-    try:
-        data = _call_groq(client, prompt)
-    except Exception as e:
-        print(f"[analyzer] Semua model gagal: {e}", flush=True)
-        data = _fallback_analysis(fin, situation, bep_info)
-
-    for key in ('headline', 'diagnosis', 'strategi'):
-        if data.get(key):
-            data[key] = _clean(data[key])
-
-    if isinstance(data.get('instruksi'), list):
-        for item in data['instruksi']:
-            if item.get('aksi'):
-                item['aksi'] = _clean(item['aksi'])
-            if item.get('alasan'):
-                item['alasan'] = _clean(item['alasan'])
-
-    if situation == 'SEHAT':
-        diag = data.get('diagnosis') or ''
-        forbidden = ['akar masalah', 'masalah utama', 'masalah utama adalah']
-        has_forbidden = any(w in diag.lower() for w in forbidden)
-        if has_forbidden or not diag.lower().startswith(('operasional', 'kondisi', 'hari ini')):
-            data['diagnosis'] = (
-                f"Operasional hari ini sehat: laba operasional {_fmt(fin['operating_profit'])} "
-                f"dan kas bersih {_fmt(fin['cash_flow'])}. "
-                f"{diag}"
-            ).strip()
-
-    if not data.get('headline'):
-        data['headline'] = (
-            f"Pendapatan hari ini {_fmt(fin['revenue'])} "
-            f"{'di bawah' if bep_info['gap'] < 0 else 'di atas'} "
-            f"Total Uang Keluar {_fmt(bep_info['bep'])} "
-            f"(kas bersih {_fmt(bep_info['gap'])})."
-        )
-
-    if not data.get('kondisi'):
-        data['kondisi'] = "Rugi" if fin['cash_flow'] < 0 else "Untung"
-
-    if not data.get('strategi'):
-        data['strategi'] = _fallback_strategi(fin, situation, bep_info)
-
-    data = _fix_analysis(data, fin, situation, bep_info, yctx=yctx)
+    data = _fix_analysis(data, fin, situation, bep_info, yctx=yctx, anomalies=anomalies)
 
     return data
