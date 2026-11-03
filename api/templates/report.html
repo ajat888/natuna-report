@@ -19,6 +19,8 @@
     --warning-bg: #fef3c7;
     --info: #0369a1;
     --info-bg: #e0f2fe;
+    --accent: #c2410c;
+    --accent-bg: #ffedd5;
   }
   * { box-sizing: border-box; }
   body {
@@ -33,7 +35,7 @@
   .warning-banner {
     background: var(--warning-bg); border: 1px solid #f59e0b;
     border-left: 4px solid var(--warning); border-radius: 8px;
-    padding: 12px 16px; margin-bottom: 20px; font-size: 12.5px;
+    padding: 12px 16px; margin-bottom: 16px; font-size: 12.5px;
   }
   .warning-banner h3 {
     margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase;
@@ -41,6 +43,18 @@
   }
   .warning-banner ul { margin: 0; padding-left: 18px; color: #78350f; }
   .warning-banner li { margin-bottom: 4px; }
+
+  .anomaly-banner {
+    background: var(--accent-bg); border: 1px solid #fb923c;
+    border-left: 4px solid var(--accent); border-radius: 8px;
+    padding: 12px 16px; margin-bottom: 20px; font-size: 12.5px;
+  }
+  .anomaly-banner h3 {
+    margin: 0 0 8px 0; font-size: 13px; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--accent);
+  }
+  .anomaly-banner ul { margin: 0; padding-left: 18px; color: #7c2d12; }
+  .anomaly-banner li { margin-bottom: 4px; }
 
   .exec-summary {
     background: #fff; border: 1px solid var(--border); border-radius: 10px;
@@ -57,7 +71,7 @@
   .status-badge.kritis { background: var(--danger-bg); color: var(--danger); }
   .status-badge.hpp { background: var(--warning-bg); color: var(--warning); }
   .status-badge.traffic { background: var(--info-bg); color: var(--info); }
-  .status-badge.cost { background: #ffedd5; color: #c2410c; }
+  .status-badge.cost { background: var(--accent-bg); color: var(--accent); }
   .status-badge.marginal { background: #f1f5f9; color: #475569; }
   .status-kondisi {
     display: inline-block; padding: 4px 12px; border-radius: 6px;
@@ -152,14 +166,49 @@
     font-size: 10.5px; font-weight: bold; text-transform: uppercase; letter-spacing: 0.4px;
   }
   .badge-blue { background: var(--info-bg); color: var(--info); }
-  .badge-orange { background: #ffedd5; color: #c2410c; }
+  .badge-orange { background: var(--accent-bg); color: var(--accent); }
   .badge-green { background: var(--success-bg); color: var(--success); }
   .badge-red { background: var(--danger-bg); color: var(--danger); }
   .badge-gray { background: #f1f5f9; color: #475569; }
 
+  .delta-up { color: var(--success); font-weight: 600; }
+  .delta-down { color: var(--danger); font-weight: 600; }
+
+  details {
+    margin-bottom: 16px;
+    background: #fff; border: 1px solid var(--border); border-radius: 8px;
+    padding: 0;
+  }
+  details summary {
+    cursor: pointer; padding: 12px 16px;
+    font-weight: 600; font-size: 13px;
+    color: var(--secondary);
+    text-transform: uppercase; letter-spacing: 0.5px;
+    user-select: none;
+    list-style: none;
+  }
+  details summary::-webkit-details-marker { display: none; }
+  details summary::before {
+    content: "▸ "; color: var(--muted); display: inline-block; width: 14px;
+  }
+  details[open] summary::before { content: "▾ "; }
+  details[open] summary { border-bottom: 1px solid var(--border); }
+  details > .details-body { padding: 12px 16px; }
+  details > .details-body .table-responsive { margin-bottom: 0; border: none; }
+
   .footer-note {
     font-size: 11px; color: var(--muted); text-align: center;
     margin-top: 30px; padding-top: 16px; border-top: 1px solid var(--border);
+  }
+
+  .empty-note {
+    color: var(--muted); font-size: 12.5px; padding: 8px 0;
+  }
+
+  @media print {
+    details > summary { display: none !important; }
+    details > *:not(summary) { display: block !important; }
+    details { border: none; padding: 0; }
   }
 </style>
 </head>
@@ -179,6 +228,15 @@
 </div>
 {% endif %}
 
+{% if anomalies %}
+<div class="anomaly-banner">
+  <h3>🔎 Sinyal Operasional yang Perlu Dicek</h3>
+  <ul>
+    {% for a in anomalies %}<li>{{ a }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 <div class="exec-summary">
   <div class="exec-status">
     <span class="status-badge {{ situation_class }}">{{ situation_label }}</span>
@@ -192,16 +250,15 @@
   <div class="bep-block">
     <div class="bep-info">
       <span>Pendapatan: <strong>{{ fin.revenue|rupiah }}</strong></span>
-      <span>Batas Uang Keluar (Titik Impas Kas): <strong>{{ bep_info.bep|rupiah }}</strong></span>
+      <span>Total Uang Keluar: <strong>{{ bep_info.bep|rupiah }}</strong></span>
       <span class="{% if bep_info.gap < 0 %}under{% else %}over{% endif %}">
-        {% if bep_info.gap < 0 %}Di bawah Batas{% else %}Di atas Batas{% endif %}:
-        {{ bep_info.gap|rupiah }} ({{ bep_info.gap_pct }}%)
+        Kas Bersih: {{ bep_info.gap|rupiah }} ({{ bep_info.gap_pct }}%)
       </span>
     </div>
-    {% set bep_pct = (fin.revenue / bep_info.bep * 100) if bep_info.bep > 0 else 0 %}
-    {% set bep_bar = bep_pct if bep_pct <= 100 else 100 %}
+    {% set ratio = (fin.revenue / bep_info.bep * 100) if bep_info.bep > 0 else 0 %}
+    {% set bar = ratio if ratio <= 100 else 100 %}
     <div class="bep-progress">
-      <div class="bep-fill" style="width: {{ '%.1f'|format(bep_bar) }}%"></div>
+      <div class="bep-fill" style="width: {{ '%.1f'|format(bar) }}%"></div>
     </div>
   </div>
 
@@ -214,6 +271,44 @@
     </ol>
   </div>
 </div>
+
+{% if yctx and yctx.has_previous %}
+<h2>Perbandingan dengan {{ yctx.prev_date|tgl_id }}</h2>
+<div class="card-summary">
+  {% for c in yctx.comparisons %}
+  <div class="summary-row">
+    <span>{{ c.label }}</span>
+    <span class="{% if c.positive %}delta-up{% else %}delta-down{% endif %}">{{ c.display }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% if yctx.movers %}
+<div class="table-responsive">
+  <table>
+    <thead>
+      <tr>
+        <th>Menu dengan Pergerakan Terbesar</th>
+        <th class="text-right">Kemarin</th>
+        <th class="text-right">Hari Ini</th>
+        <th class="text-right">Selisih</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in yctx.movers %}
+      <tr>
+        <td>{{ m.menu }}</td>
+        <td class="text-right">{{ m.prev }}</td>
+        <td class="text-right">{{ m.today }}</td>
+        <td class="text-right {% if m.diff > 0 %}delta-up{% else %}delta-down{% endif %}">
+          {% if m.diff > 0 %}+{% endif %}{{ m.diff }}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+{% endif %}
 
 <h2>Ringkasan Uang Masuk & Keluar</h2>
 <div class="card-summary">
@@ -262,110 +357,166 @@
   </p>
 </div>
 
-<h2>Rincian Penjualan & Laba Kotor</h2>
+<h2>Top 5 Pendapatan</h2>
 <div class="table-responsive">
   <table>
     <thead>
       <tr>
-        <th style="width:40%;">Menu / Produk</th>
+        <th style="width:55%;">Menu</th>
         <th class="text-right">Jumlah</th>
         <th class="text-right">Pendapatan</th>
-        <th class="text-right">Laba Kotor</th>
       </tr>
     </thead>
     <tbody>
-      {% set cats = {} %}
-      {% for p in fin.per_menu %}
-        {% set _ = cats.setdefault(p.category, []).append(p) %}
-      {% endfor %}
-      {% for cat, items in cats.items() %}
-        <tr><td colspan="4" class="cat-row">{{ cat|upper }}</td></tr>
-        {% for p in items %}
-          <tr>
-            <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
-              <br><small style="color:var(--muted);">→ {{ p.matched_name }}</small>{% endif %}</td>
-            <td class="text-right">{{ p.qty }}</td>
-            <td class="text-right">{{ p.revenue|rupiah }}</td>
-            <td class="text-right {% if p.margin is none %}warn{% elif p.margin < 0 %}err{% else %}val-success{% endif %}">
-              {% if p.margin is none %}— HPP tidak tersedia{% else %}{{ p.margin|rupiah }}{% endif %}
-            </td>
-          </tr>
-        {% endfor %}
-      {% endfor %}
-      <tr class="row-total">
-        <td>TOTAL</td>
-        <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
-        <td class="text-right">{{ fin.revenue|rupiah }}</td>
-        <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
+      {% for p in top_revenue %}
+      <tr>
+        <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
+          <br><small style="color:var(--muted);">→ {{ p.matched_name }}</small>{% endif %}</td>
+        <td class="text-right">{{ p.qty }}</td>
+        <td class="text-right fw-bold">{{ p.revenue|rupiah }}</td>
       </tr>
+      {% endfor %}
+      {% if not top_revenue %}
+      <tr><td colspan="3" class="empty-note">Tidak ada penjualan.</td></tr>
+      {% endif %}
     </tbody>
   </table>
 </div>
 
-<h2>Rincian Pengeluaran</h2>
+<h2>Top 5 Laba</h2>
 <div class="table-responsive">
   <table>
     <thead>
       <tr>
-        <th style="width:60%;">Deskripsi</th>
-        <th class="text-right">Nominal</th>
+        <th style="width:45%;">Menu</th>
+        <th class="text-right">Jumlah</th>
+        <th class="text-right">Laba</th>
+        <th class="text-right">Margin %</th>
       </tr>
     </thead>
     <tbody>
-      {% for cat, data in fin.expense_breakdown.items() %}
-        <tr><td colspan="2" class="cat-row">{{ cat|upper }}</td></tr>
-        {% for item in data['items'] %}
-          <tr>
-            <td>{{ item.sub or '(tanpa nama)' }}</td>
-            <td class="text-right">{{ item.amount|rupiah }}</td>
-          </tr>
-        {% endfor %}
-      {% endfor %}
-      <tr class="row-total">
-        <td>TOTAL PENGELUARAN</td>
-        <td class="text-right val-danger">{{ fin.expenses|rupiah }}</td>
+      {% for p in top_profit %}
+      <tr>
+        <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
+          <br><small style="color:var(--muted);">→ {{ p.matched_name }}</small>{% endif %}</td>
+        <td class="text-right">{{ p.qty }}</td>
+        <td class="text-right fw-bold val-success">{{ p.margin|rupiah }}</td>
+        <td class="text-right">{{ (p.margin_pct|round(1)) if p.margin_pct is not none else '—' }}{% if p.margin_pct is not none %}%{% endif %}</td>
       </tr>
+      {% endfor %}
+      {% if not top_profit %}
+      <tr><td colspan="4" class="empty-note">Tidak ada menu dengan laba positif.</td></tr>
+      {% endif %}
     </tbody>
   </table>
 </div>
 
-<h2>Klasifikasi Menu</h2>
+<h2>Watchlist — Perlu Perhatian</h2>
 <div class="table-responsive">
   <table>
     <thead>
       <tr>
-        <th style="width:25%;">Kategori</th>
-        <th>Daftar Menu (Jumlah | Laba)</th>
+        <th style="width:45%;">Menu</th>
+        <th class="text-right">Jumlah</th>
+        <th class="text-right">Laba</th>
+        <th class="text-right">Margin %</th>
       </tr>
     </thead>
     <tbody>
-      {% for cat, items in classification.items() %}
-        {% if items %}
-        <tr>
-          <td style="vertical-align: top;">
-            {% if cat == 'Primadona' %}<span class="badge badge-green">⭐ Primadona</span>
-            {% elif cat == 'Volume Tinggi' %}<span class="badge badge-blue">🐴 Volume Tinggi</span>
-            {% elif cat == 'Potensial' %}<span class="badge badge-orange">🧩 Potensial</span>
-            {% elif cat == 'Evaluasi' %}<span class="badge badge-gray">🗑️ Evaluasi</span>
-            {% elif cat == 'Rugi' %}<span class="badge badge-red">🩸 Rugi</span>
-            {% endif %}
-          </td>
-          <td>
-            {% for item in items %}
-              <div style="margin-bottom: 4px;">
-                <strong>{{ item.product }}</strong>
-                <span style="color: var(--secondary); font-size: 11.5px;">
-                  (Jumlah {{ item.qty }} | Laba {{ item.margin|rupiah }})
-                </span>
-              </div>
+      {% for p in watchlist %}
+      <tr>
+        <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
+          <br><small style="color:var(--muted);">→ {{ p.matched_name }}</small>{% endif %}</td>
+        <td class="text-right">{{ p.qty }}</td>
+        <td class="text-right {% if p.margin is none %}warn{% elif p.margin < 0 %}err{% else %}val-success{% endif %}">
+          {% if p.margin is none %}HPP tidak tersedia{% else %}{{ p.margin|rupiah }}{% endif %}
+        </td>
+        <td class="text-right">
+          {% if p.margin_pct is none %}—{% else %}{{ p.margin_pct|round(1) }}%{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not watchlist %}
+      <tr><td colspan="4" class="empty-note">Semua menu di atas margin 15%. Tidak ada yang perlu dievaluasi.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<details>
+  <summary>Lampiran: Rincian Penjualan Lengkap</summary>
+  <div class="details-body">
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:40%;">Menu / Produk</th>
+            <th class="text-right">Jumlah</th>
+            <th class="text-right">Pendapatan</th>
+            <th class="text-right">Laba Kotor</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set cats = {} %}
+          {% for p in fin.per_menu %}
+            {% set _ = cats.setdefault(p.category, []).append(p) %}
+          {% endfor %}
+          {% for cat, items in cats.items() %}
+            <tr><td colspan="4" class="cat-row">{{ cat|upper }}</td></tr>
+            {% for p in items %}
+              <tr>
+                <td>{{ p.product }}{% if p.matched_name and p.matched_name != p.product %}
+                  <br><small style="color:var(--muted);">→ {{ p.matched_name }}</small>{% endif %}</td>
+                <td class="text-right">{{ p.qty }}</td>
+                <td class="text-right">{{ p.revenue|rupiah }}</td>
+                <td class="text-right {% if p.margin is none %}warn{% elif p.margin < 0 %}err{% else %}val-success{% endif %}">
+                  {% if p.margin is none %}— HPP tidak tersedia{% else %}{{ p.margin|rupiah }}{% endif %}
+                </td>
+              </tr>
             {% endfor %}
-          </td>
-        </tr>
-        {% endif %}
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
+          {% endfor %}
+          <tr class="row-total">
+            <td>TOTAL</td>
+            <td class="text-right">{{ fin.per_menu|sum(attribute='qty') }}</td>
+            <td class="text-right">{{ fin.revenue|rupiah }}</td>
+            <td class="text-right val-success">{{ fin.gross_profit|rupiah }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</details>
+
+<details>
+  <summary>Lampiran: Rincian Pengeluaran Lengkap</summary>
+  <div class="details-body">
+    <div class="table-responsive">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:60%;">Deskripsi</th>
+            <th class="text-right">Nominal</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cat, data in fin.expense_breakdown.items() %}
+            <tr><td colspan="2" class="cat-row">{{ cat|upper }} — {{ data['total']|rupiah }}</td></tr>
+            {% for item in data['items'] %}
+              <tr>
+                <td>{{ item.sub or '(tanpa nama)' }}</td>
+                <td class="text-right">{{ item.amount|rupiah }}</td>
+              </tr>
+            {% endfor %}
+          {% endfor %}
+          <tr class="row-total">
+            <td>TOTAL PENGELUARAN</td>
+            <td class="text-right val-danger">{{ fin.expenses|rupiah }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</details>
 
 <div class="footer-note">
   Laporan otomatis Sistem Informasi Manajemen Natuna Café & Resto.<br>

@@ -614,3 +614,53 @@ def get_menu_revenue_aggregate(from_date, to_date, limit=8):
         with conn.cursor() as cur:
             cur.execute(sql, (_coerce_date(from_date), _coerce_date(to_date), int(limit)))
             return cur.fetchall()
+
+
+@_wrap_db_errors
+def get_previous_report_with_items(tanggal_iso):
+    sql = """
+        SELECT r.*,
+            (SELECT COALESCE(SUM(qty), 0) FROM report_menus WHERE report_id = r.id) AS total_items
+        FROM reports r
+        WHERE r.tanggal < %s
+        ORDER BY r.tanggal DESC
+        LIMIT 1
+    """
+    with _get_pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (_coerce_date(tanggal_iso),))
+            return cur.fetchone()
+
+
+@_wrap_db_errors
+def get_report_menus_by_id(report_id):
+    sql = """
+        SELECT
+            COALESCE(matched_name, product) AS menu,
+            product, qty, revenue, margin, margin_pct
+        FROM report_menus
+        WHERE report_id = %s
+    """
+    with _get_pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (report_id,))
+            return cur.fetchall()
+
+
+@_wrap_db_errors
+def get_expense_item_median(from_date, to_date, min_days=3):
+    sql = """
+        SELECT
+            LOWER(TRIM(re.sub)) AS sub_key,
+            percentile_cont(0.5) WITHIN GROUP (ORDER BY re.amount) AS median
+        FROM report_expenses re
+        JOIN reports r ON r.id = re.report_id
+        WHERE r.tanggal BETWEEN %s AND %s
+          AND r.day_type = 'operational'
+        GROUP BY LOWER(TRIM(re.sub))
+        HAVING COUNT(DISTINCT r.tanggal) >= %s
+    """
+    with _get_pool().connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(sql, (_coerce_date(from_date), _coerce_date(to_date), int(min_days)))
+            return {row['sub_key']: float(row['median']) for row in cur.fetchall() if row['sub_key']}

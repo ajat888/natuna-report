@@ -24,6 +24,8 @@ SITUATION_CLASSES = {
 
 
 def _fmt(n):
+    if n is None:
+        return '-'
     return f"Rp {int(n):,}".replace(",", ".")
 
 
@@ -128,23 +130,238 @@ def build_historical_context(tanggal_iso, days=7):
     return "\n".join(lines), meta
 
 
+def build_yesterday_context(tanggal_iso, today_fin):
+    empty = {
+        'has_previous': False,
+        'text': '(belum ada laporan sebelumnya — ini laporan pertama)',
+        'deltas': [],
+        'comparisons': [],
+        'movers': [],
+        'prev_actions': [],
+        'prev_headline': '',
+        'prev_date': None,
+        'prev_revenue': 0,
+        'prev_items': 0,
+        'prev_cash': 0,
+        'prev_attach_rate': 0.0,
+    }
+
+    try:
+        prev = db.get_previous_report_with_items(tanggal_iso)
+    except Exception:
+        return empty
+
+    if not prev:
+        return empty
+
+    try:
+        prev_menus = db.get_report_menus_by_id(prev['id'])
+    except Exception:
+        prev_menus = []
+
+    prev_rev = float(prev.get('revenue') or 0)
+    prev_cash = float(prev.get('net_cash_flow') or 0)
+    prev_items = int(prev.get('total_items') or 0)
+    prev_ar = float(prev.get('attach_rate') or 0)
+
+    today_rev = today_fin['revenue']
+    today_cash = today_fin['cash_flow']
+    today_items = sum(p['qty'] for p in today_fin['per_menu'])
+    today_ar = today_fin.get('attach_rate', 0) or 0
+
+    deltas = []
+    if prev_rev > 0:
+        pct = (today_rev - prev_rev) / prev_rev * 100
+        deltas.append({
+            'label': 'Pendapatan',
+            'prev': int(prev_rev),
+            'today': int(today_rev),
+            'delta_pct': round(pct, 1),
+            'unit': 'rupiah',
+        })
+    if prev_items > 0 or today_items > 0:
+        pct = ((today_items - prev_items) / prev_items * 100) if prev_items > 0 else 0
+        deltas.append({
+            'label': 'Volume Item',
+            'prev': prev_items,
+            'today': today_items,
+            'delta_pct': round(pct, 1),
+            'unit': 'item',
+        })
+    deltas.append({
+        'label': 'Kas Bersih',
+        'prev': int(prev_cash),
+        'today': int(today_cash),
+        'delta': int(today_cash - prev_cash),
+        'unit': 'rupiah_delta',
+    })
+    if prev_ar > 0 or today_ar > 0:
+        deltas.append({
+            'label': 'Rasio Minuman/Makanan',
+            'prev': round(prev_ar * 100, 1),
+            'today': round(today_ar * 100, 1),
+            'unit': 'pct_point',
+        })
+
+    comparisons = []
+    for d in deltas:
+        unit = d['unit']
+        if unit == 'rupiah':
+            sign = '+' if d['delta_pct'] >= 0 else ''
+            display = f"{_fmt(d['prev'])} → {_fmt(d['today'])} ({sign}{d['delta_pct']}%)"
+            positive = d['delta_pct'] >= 0
+        elif unit == 'rupiah_delta':
+            sign = '+' if d['delta'] >= 0 else ''
+            display = f"{_fmt(d['prev'])} → {_fmt(d['today'])} ({sign}{_fmt(d['delta'])})"
+            positive = d['delta'] >= 0
+        elif unit == 'item':
+            sign = '+' if d['delta_pct'] >= 0 else ''
+            display = f"{d['prev']} → {d['today']} ({sign}{d['delta_pct']}%)"
+            positive = d['delta_pct'] >= 0
+        else:
+            display = f"{d['prev']}% → {d['today']}%"
+            positive = d['today'] >= d['prev']
+        comparisons.append({'label': d['label'], 'display': display, 'positive': positive})
+
+    movers = []
+    prev_map = {}
+    for m in prev_menus:
+        name = m.get('menu')
+        if name:
+            prev_map[name] = int(m.get('qty') or 0)
+    today_map = {(p.get('matched_name') or p['product']): p['qty'] for p in today_fin['per_menu']}
+    all_names = set(prev_map) | set(today_map)
+    for name in all_names:
+        pq = prev_map.get(name, 0)
+        tq = today_map.get(name, 0)
+        if pq + tq < 3:
+            continue
+        diff = tq - pq
+        if abs(diff) >= 2:
+            movers.append({'menu': name, 'prev': pq, 'today': tq, 'diff': diff})
+    movers.sort(key=lambda x: abs(x['diff']), reverse=True)
+    movers = movers[:5]
+
+    prev_analysis = prev.get('analysis_json')
+    prev_actions = []
+    prev_headline = ''
+    if isinstance(prev_analysis, dict):
+        prev_headline = prev_analysis.get('headline') or ''
+        for item in (prev_analysis.get('instruksi') or [])[:4]:
+            if isinstance(item, dict) and item.get('aksi'):
+                prev_actions.append(item['aksi'])
+
+    lines = [f"PERBANDINGAN DENGAN LAPORAN SEBELUMNYA ({prev['tanggal']}):"]
+    for c in comparisons:
+        lines.append(f"- {c['label']}: {c['display']}")
+    if movers:
+        lines.append("")
+        lines.append("PERGERAKAN MENU TERBESAR:")
+        for m in movers:
+            direction = "naik" if m['diff'] > 0 else "turun"
+            lines.append(f"- {m['menu']}: {m['prev']} → {m['today']} ({direction} {abs(m['diff'])})")
+    if prev_headline:
+        lines.append("")
+        lines.append(f"HEADLINE LAPORAN KEMARIN: {prev_headline}")
+    if prev_actions:
+        lines.append("")
+        lines.append("AKSI YANG DISARANKAN KEMARIN (evaluasi apakah terlihat dampaknya hari ini):")
+        for i, a in enumerate(prev_actions, 1):
+            lines.append(f"{i}. {a}")
+
+    prev_date_str = prev['tanggal'].isoformat() if hasattr(prev['tanggal'], 'isoformat') else str(prev['tanggal'])
+
+    return {
+        'has_previous': True,
+        'text': '\n'.join(lines),
+        'deltas': deltas,
+        'comparisons': comparisons,
+        'movers': movers,
+        'prev_actions': prev_actions,
+        'prev_headline': prev_headline,
+        'prev_date': prev_date_str,
+        'prev_revenue': int(prev_rev),
+        'prev_items': prev_items,
+        'prev_cash': int(prev_cash),
+        'prev_attach_rate': prev_ar,
+    }
+
+
+def build_operational_anomalies(fin, tanggal_iso, yctx):
+    anomalies = []
+    rev = fin['revenue']
+
+    if rev > 0:
+        for cat, data in fin['expense_breakdown'].items():
+            if cat.lower() in ('dapur', 'bar'):
+                ratio = data['total'] / rev
+                if ratio > 0.6:
+                    anomalies.append(
+                        f"Belanja {cat} {_fmt(data['total'])} = {ratio*100:.0f}% dari pendapatan hari ini "
+                        f"(normalnya di bawah 60%). Konfirmasi: restock besar atau pemborosan?"
+                    )
+
+    try:
+        tgl = datetime.strptime(tanggal_iso, "%Y-%m-%d").date()
+        from_date = (tgl - timedelta(days=30)).isoformat()
+        to_date = (tgl - timedelta(days=1)).isoformat()
+        medians = db.get_expense_item_median(from_date, to_date, min_days=3)
+    except Exception:
+        medians = {}
+
+    for cat, data in fin['expense_breakdown'].items():
+        for item in data['items']:
+            sub = (item.get('sub') or '').strip().lower()
+            if not sub or not medians:
+                continue
+            med = medians.get(sub)
+            if not med or med <= 0:
+                continue
+            amt = item['amount']
+            if amt >= med * 2.5 and (amt - med) >= 100000:
+                anomalies.append(
+                    f"'{item['sub']}' {_fmt(amt)} — {amt/med:.1f}x median historis {_fmt(med)}. "
+                    f"Konfirmasi: belanja besar wajar atau berlebih?"
+                )
+
+    if yctx.get('has_previous'):
+        prev_items = yctx.get('prev_items', 0)
+        today_items = sum(p['qty'] for p in fin['per_menu'])
+        if prev_items > 0 and today_items > 0:
+            delta_pct = (today_items - prev_items) / prev_items * 100
+            if abs(delta_pct) >= 40:
+                direction = 'turun' if delta_pct < 0 else 'naik'
+                anomalies.append(
+                    f"Volume item {direction} {abs(delta_pct):.0f}% vs kemarin "
+                    f"({prev_items} → {today_items}). Cek faktor eksternal "
+                    f"(cuaca, event, jam operasional, atau perubahan harga)."
+                )
+
+        prev_ar = yctx.get('prev_attach_rate', 0)
+        today_ar = fin.get('attach_rate', 0) or 0
+        if prev_ar > 0 and today_ar > 0:
+            diff = today_ar - prev_ar
+            if abs(diff) >= 0.2:
+                anomalies.append(
+                    f"Rasio minuman/makanan bergeser dari {prev_ar*100:.0f}% ke {today_ar*100:.0f}%. "
+                    f"Indikasi perubahan pola kunjungan (berkelompok vs sendiri)."
+                )
+
+    return anomalies
+
+
 def compute_bep(fin, hist_meta):
-    """Menghitung Titik Impas Kas: Berapa pendapatan minimal untuk menutupi semua uang yang keluar hari ini."""
     rev = fin['revenue']
     total_expenses = float(fin.get('expenses') or 0)
     hpp_ratio = (fin['hpp'] / rev) if rev > 0 else 0
-
-    # Untuk bisnis retail/resto, BEP Kas paling mudah dipahami sebagai Total Pengeluaran.
-    # Jika Pengeluaran 4.6Jt, maka BEP Kas adalah 4.6Jt.
     bep = total_expenses
-    
     gap = rev - bep
     gap_pct = (gap / bep * 100) if bep > 0 else 0.0
 
     return {
         'bep': int(round(bep)),
         'hpp_ratio': round(hpp_ratio, 4),
-        'fixed_cost': int(total_expenses), 
+        'fixed_cost': int(total_expenses),
         'gap': int(round(gap)),
         'gap_pct': round(gap_pct, 1),
         'fixed_cost_source': 'kas',
@@ -156,7 +373,6 @@ def classify_situation(fin, bep_info, hist_meta):
     op = fin['operating_profit']
     cash = fin['cash_flow']
     hpp_ratio = bep_info['hpp_ratio']
-    bep = bep_info['bep']
     hist_hpp = hist_meta.get('avg_hpp_ratio', 0) or 0
 
     if rev <= 0:
@@ -173,9 +389,9 @@ def classify_situation(fin, bep_info, hist_meta):
     if op > 0:
         return 'SEHAT'
 
-    if bep > 0 and rev < bep * 0.6:
+    if bep_info['bep'] > 0 and rev < bep_info['bep'] * 0.6:
         return 'TRAFFIC_PROBLEM'
-    if bep > 0 and rev >= bep * 0.85:
+    if bep_info['bep'] > 0 and rev >= bep_info['bep'] * 0.85:
         return 'COST_PROBLEM'
     return 'MARGINAL'
 

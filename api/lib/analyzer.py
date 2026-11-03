@@ -36,12 +36,19 @@ SYSTEM_PROMPT = (
     "ATURAN AKSI-NYAMBUNG-DIAGNOSIS (WAJIB): "
     "Setiap aksi HARUS menjawab akar masalah di diagnosis. Dilarang berlawanan arah. "
     "DILARANG menyarankan KENAIKAN HARGA dan DISKON pada menu yang SAMA dalam satu laporan. "
+    "ATURAN PERBANDINGAN (FATAL): "
+    "Jika ada PERBANDINGAN DENGAN LAPORAN SEBELUMNYA, WAJIB sebut minimal 1 delta angka di headline atau diagnosis. "
+    "Jangan pernah membandingkan kategori belanja dengan total pengeluaran (apel vs jeruk). Hanya setara dengan setara. "
+    "Jika ada AKSI KEMARIN, sebutkan apakah dampaknya terlihat di data hari ini (jangan diamkan). "
     "HARUS MENGEMBALIKAN OUTPUT BERUPA FORMAT JSON YANG VALID SEPERTI YANG DIMINTA."
 )
 
 NEW_MENU_KWS = ('tambahkan menu', 'tambah menu', 'menu baru', 'perkenalkan menu', 'memperkenalkan menu')
 HARGA_UP_KWS = ('naikkan harga', 'tingkatkan harga', 'menaikkan harga', 'meningkatkan harga', 'sesuaikan harga jual', 'sesuaikan harga')
 DISCOUNT_KWS = ('diskon', 'potongan harga', 'harga khusus')
+
+PRUNE_KWS = ('pangkas', 'hapus', 'kurangi menu', 'evaluasi menu', 'menata ulang', 'kurangi biaya', 'potong menu')
+GROWTH_KWS = ('tingkatkan', 'kembangkan', 'pertahankan', 'pertumbuhan', 'pelanggan', 'kunjungan', 'promosi', 'loyalitas', 'naikkan pendapatan', 'pelanggan lama')
 
 
 def _fmt(n):
@@ -100,20 +107,70 @@ def _menu_mentions(text, extra_per_menu=None):
     return list(found)
 
 
+def _parse_rp(tok):
+    tok = tok.strip().lower()
+    tok = re.sub(r'\brp\s*', '', tok).strip()
+    mult = 1
+    if 'juta' in tok or 'jt' in tok:
+        mult = 1_000_000
+    elif 'rb' in tok or 'ribu' in tok:
+        mult = 1_000
+    tok = re.sub(r'\s*(juta|jt|rb|ribu)\s*', '', tok).strip()
+    tok = tok.replace('.', '').replace(',', '.')
+    try:
+        return float(tok) * mult
+    except ValueError:
+        return None
+
+
+def _fix_comparison_contradictions(text):
+    if not text or not isinstance(text, str):
+        return text
+
+    rp_pattern = r'rp\s*[\d.,]+\s*(?:juta|jt|rb|ribu)?'
+    up_words = r'(melampaui|melebihi|lebih\s+tinggi\s+dari|lebih\s+besar\s+dari)'
+    dn_words = r'(di\s+bawah|lebih\s+rendah\s+dari|kurang\s+dari)'
+
+    def _replace(pat, checker, text_in):
+        result = []
+        last = 0
+        for match in re.finditer(pat, text_in, re.IGNORECASE):
+            a_tok, b_tok = match.group(1), match.group(3)
+            a_val, b_val = _parse_rp(a_tok), _parse_rp(b_tok)
+            if a_val is None or b_val is None:
+                continue
+            if not checker(a_val, b_val):
+                continue
+            replacement = f"{a_tok} (patokan {b_tok})"
+            result.append(text_in[last:match.start()])
+            result.append(replacement)
+            last = match.end()
+        result.append(text_in[last:])
+        return ''.join(result)
+
+    pat_up = rf'({rp_pattern})\s*[^.]*?{up_words}\s*[^.]*?({rp_pattern})'
+    pat_dn = rf'({rp_pattern})\s*[^.]*?{dn_words}\s*[^.]*?({rp_pattern})'
+
+    text = _replace(pat_up, lambda a, b: a < b, text)
+    text = _replace(pat_dn, lambda a, b: a > b, text)
+
+    return text
+
+
 def _build_math_facts(fin):
     lines = []
     top_menus = sorted(
         [x for x in fin['per_menu'] if x['margin'] is not None and x['qty'] > 0],
         key=lambda x: x['margin'], reverse=True
     )[:5]
-    
+
     lines.append("REKOMENDASI HARGA AMAN (Kenaikan Maksimal 5%):")
     for p in top_menus:
         up = p.get('unit_price') or 0
         if up > 0:
             safe_price = int(round(up * 1.05))
             lines.append(f"- {p['product']}: Harga saat ini {_fmt(up)} -> Harga aman naik menjadi {_fmt(safe_price)}")
-            
+
     if fin.get('price_anomalies'):
         lines.append("\nFAKTA ANOMALI HARGA:")
         for a in fin['price_anomalies'][:3]:
@@ -177,8 +234,8 @@ def _fallback_strategi(fin, situation, bep_info):
     cash = fin['cash_flow']
     gap_pct = bep_info['gap_pct']
 
-    base = f"Pendapatan {_fmt(rev)} dengan kas bersih {_fmt(cash)} ({gap_pct:+.1f}% dari titik impas). "
-    
+    base = f"Pendapatan {_fmt(rev)} dengan kas bersih {_fmt(cash)} ({gap_pct:+.1f}% dari total uang keluar). "
+
     if situation == 'SEHAT':
         return base + "Prioritas 3-7 hari ke depan: sesuaikan harga menu margin tertinggi maksimal 5% sambil pantau volume; bangun program kunjungan ulang; uji paket hemat di jam sepi."
     if situation == 'STOK_BERLEBIH':
@@ -194,7 +251,15 @@ def _fallback_strategi(fin, situation, bep_info):
     return base + "Prioritas 3-7 hari ke depan: hentikan pembelian non-urgent; fokus jual menu margin tinggi; negosiasi tempo bayar; promosi cepat. Target: kas positif dalam 48 jam."
 
 
-def _fix_analysis(data, fin, situation, bep_info):
+def _sehat_growth_headline(fin, bep_info):
+    return (
+        f"Operasional hari ini sehat: kas bersih {_fmt(fin['cash_flow'])} "
+        f"({bep_info['gap_pct']:+.1f}% dari total uang keluar). "
+        f"Fokus: pertahankan momentum lewat promosi menu primadona dan program kunjungan ulang pelanggan."
+    )
+
+
+def _fix_analysis(data, fin, situation, bep_info, yctx=None):
     instruksi = data.get('instruksi')
     if not isinstance(instruksi, list):
         instruksi = []
@@ -224,7 +289,7 @@ def _fix_analysis(data, fin, situation, bep_info):
             harga_up_menus |= menus
         if _has_any(it['aksi'], DISCOUNT_KWS):
             discount_menus |= menus
-            
+
     conflicts = harga_up_menus & discount_menus
     if conflicts:
         kept = []
@@ -248,6 +313,20 @@ def _fix_analysis(data, fin, situation, bep_info):
     strat_n = _norm_text(data.get('strategi'))
     if diag_n and strat_n and diag_n == strat_n:
         data['strategi'] = _fallback_strategi(fin, situation, bep_info)
+
+    for key in ('headline', 'diagnosis', 'strategi'):
+        if data.get(key):
+            data[key] = _fix_comparison_contradictions(data[key])
+    for it in data.get('instruksi', []):
+        if it.get('aksi'):
+            it['aksi'] = _fix_comparison_contradictions(it['aksi'])
+        if it.get('alasan'):
+            it['alasan'] = _fix_comparison_contradictions(it['alasan'])
+
+    if situation == 'SEHAT':
+        h = data.get('headline') or ''
+        if _has_any(h, PRUNE_KWS) and not _has_any(h, GROWTH_KWS):
+            data['headline'] = _sehat_growth_headline(fin, bep_info)
 
     return data
 
@@ -293,7 +372,7 @@ def _get_available_models(client):
         for mid in available_ids:
             if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus', 'qwen', 'gpt-oss']):
                 valid_models.append(mid)
-                
+
     if not valid_models:
         valid_models = ["llama-3.1-8b-instant"]
 
@@ -316,12 +395,13 @@ def _extract_json(text):
 
 
 def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
-                      bep_info, situation, situation_label, hist_text, learning_ctx):
+                      bep_info, situation, situation_label, hist_text, learning_ctx,
+                      yctx=None, anomalies=None):
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     menu_lines = []
     top_menus = sorted([x for x in fin['per_menu'] if x['margin'] is not None], key=lambda x: x['margin'], reverse=True)[:15]
-    
+
     for p in top_menus:
         up = p.get('unit_price') or 0
         mp = p.get('master_price')
@@ -349,9 +429,12 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
 
     anomaly_lines = _build_anomaly_lines(fin)
     math_facts = _build_math_facts(fin)
-    
+
     hist_text_short = _truncate(hist_text, 800)
     learning_text_short = _truncate(format_learning_for_prompt(learning_ctx), 800)
+
+    yctx_text = (yctx or {}).get('text') or '(belum ada laporan sebelumnya)'
+    anomaly_signals = anomalies or []
 
     prompt = f"""
 Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
@@ -366,12 +449,18 @@ MATEMATIKA YANG SUDAH DIHITUNG OLEH SISTEM:
 {math_facts}
 (CATATAN: JANGAN menghitung ulang. Jika menyarankan aksi, gunakan angka di atas.)
 
-ANOMALI OPERASIONAL:
+PERBANDINGAN DENGAN LAPORAN SEBELUMNYA:
+{yctx_text}
+
+SINYAL OPERASIONAL (WAJIB DIBAHAS DI DIAGNOSIS JIKA ADA):
+{chr(10).join('- ' + a for a in anomaly_signals) if anomaly_signals else '- tidak ada'}
+
+ANOMALI TEKNIS (cek input kasir):
 {chr(10).join(anomaly_lines) if anomaly_lines else '- tidak ada'}
 
-TITIK IMPAS KAS:
-- Batas Uang Keluar: {_fmt(bep_info['bep'])}
-- Selisih: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
+TOTAL UANG KELUAR HARI INI:
+- Total: {_fmt(bep_info['bep'])}
+- Kas Bersih: {_fmt(bep_info['gap'])} ({bep_info['gap_pct']:+.1f}%)
 
 SITUASI: {situation_label}
 RASIO MINUMAN: {attach_rate_pct:.1f}% (Gunakan angka persis ini jika menyebut rasio).
@@ -395,8 +484,8 @@ TUGAS:
 Hasilkan JSON PERSIS (Bahasa Indonesia, tanpa kata Inggris):
 {{
   "kondisi": "Rugi" atau "Untung",
-  "headline": "1 kalimat tajam menyebut Titik Impas Kas, selisih, dan 1 arahan utama.",
-  "diagnosis": "2-3 kalimat. Ikuti aturan konsistensi status.",
+  "headline": "1 kalimat tajam menyebut Total Uang Keluar, kas bersih, dan 1 arahan utama. Jika ada PERBANDINGAN, sebut minimal 1 delta angka.",
+  "diagnosis": "2-3 kalimat. Ikuti aturan konsistensi status. Jika ada SINYAL OPERASIONAL, wajib bahas. Jika ada AKSI KEMARIN, evaluasi dampaknya.",
   "instruksi": [
     {{"aksi": "Tindakan taktis spesifik", "alasan": "Kenapa"}},
     {{"aksi": "...", "alasan": "..."}},
@@ -407,7 +496,7 @@ Hasilkan JSON PERSIS (Bahasa Indonesia, tanpa kata Inggris):
 }}
 
 PANDUAN AKSI:
-- Sehat → pengembangan (margin absolut, promosi, pelanggan). DILARANG memangkas biaya.
+- Sehat → pertumbuhan (margin absolut, promosi, pelanggan, kunjungan ulang). DILARANG memangkas menu atau biaya.
 - Belanja Stok Berlebih → batasi belanja, audit stok, olah sisa, tunda beli.
 - Kunjungan Rendah → promosi, jam promo, aktifkan pelanggan lama.
 - HPP Terlalu Tinggi → negosiasi, reformulasi porsi, sesuaikan harga.
@@ -421,6 +510,7 @@ ATURAN TAMBAHAN (FATAL):
 - DILARANG sebut harga/angka yang tidak ada di fakta matematika atas.
 - DILARANG naikkan harga DAN diskon pada menu yang sama.
 - Strategi HARUS BERBEDA dari Diagnosis.
+- Saat menulis "X melampaui Y", pastikan X > Y. Saat menulis "X di bawah Y", pastikan X < Y.
 """
 
     available_models = _get_available_models(client)
@@ -488,8 +578,8 @@ ATURAN TAMBAHAN (FATAL):
         data['headline'] = (
             f"Pendapatan hari ini {_fmt(fin['revenue'])} "
             f"{'di bawah' if bep_info['gap'] < 0 else 'di atas'} "
-            f"Titik Impas Kas {_fmt(bep_info['bep'])} "
-            f"(selisih {_fmt(bep_info['gap'])})."
+            f"Total Uang Keluar {_fmt(bep_info['bep'])} "
+            f"(kas bersih {_fmt(bep_info['gap'])})."
         )
 
     if not data.get('kondisi'):
@@ -498,6 +588,6 @@ ATURAN TAMBAHAN (FATAL):
     if not data.get('strategi'):
         data['strategi'] = _fallback_strategi(fin, situation, bep_info)
 
-    data = _fix_analysis(data, fin, situation, bep_info)
+    data = _fix_analysis(data, fin, situation, bep_info, yctx=yctx)
 
     return data

@@ -13,6 +13,7 @@ from lib.menu_data import MENU_DATA
 from lib.insights import (
     build_historical_context, compute_bep, classify_situation,
     SITUATION_LABELS, SITUATION_CLASSES, compute_day_of_week,
+    build_yesterday_context, build_operational_anomalies,
 )
 from lib.learning import build_learning_context
 from lib import db
@@ -30,6 +31,19 @@ BULAN = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','Sep
 
 def _fmt_idr(n):
     return f"Rp {int(n):,}".replace(",", ".")
+
+
+def _fmt_tanggal_id(iso):
+    if not iso:
+        return '-'
+    try:
+        dt = datetime.strptime(iso, "%Y-%m-%d")
+        return f"{dt.day} {BULAN[dt.month-1]} {dt.year}"
+    except Exception:
+        return iso
+
+
+env.filters['tgl_id'] = _fmt_tanggal_id
 
 
 @app.route("/api/ping", methods=["GET"])
@@ -167,13 +181,33 @@ def generate_report():
 
         learning_ctx = build_learning_context(tanggal)
 
-        # PERBAIKAN: Memasukkan variabel 'situation' ke dalam parameter
+        yctx = build_yesterday_context(tanggal, fin)
+        anomalies = build_operational_anomalies(fin, tanggal, yctx)
+
         analysis = generate_analysis(
             fin, classification, tanggal_panjang, tanggal,
             bep_info, situation, situation_label, hist_text, learning_ctx,
+            yctx=yctx, anomalies=anomalies,
         )
 
         warnings = build_warnings(duplicate_expenses, fin, hist_text)
+
+        top_revenue = sorted(
+            [p for p in fin['per_menu'] if p['revenue'] > 0],
+            key=lambda p: p['revenue'], reverse=True
+        )[:5]
+
+        top_profit = sorted(
+            [p for p in fin['per_menu'] if p['margin'] is not None and p['margin'] > 0],
+            key=lambda p: p['margin'], reverse=True
+        )[:5]
+
+        watchlist = [
+            p for p in fin['per_menu']
+            if p['margin'] is None
+            or (p['margin'] is not None and p['margin'] < 0)
+            or (p['margin_pct'] is not None and p['margin_pct'] < 15)
+        ]
 
         html = env.get_template("report.html").render(
             tanggal_panjang=tanggal_panjang,
@@ -187,6 +221,11 @@ def generate_report():
             situation_class=situation_class,
             warnings=warnings,
             hist_meta=hist_meta,
+            yctx=yctx,
+            anomalies=anomalies,
+            top_revenue=top_revenue,
+            top_profit=top_profit,
+            watchlist=watchlist,
         )
 
         warning_msg = None
@@ -208,6 +247,8 @@ def generate_report():
         }
         if warnings:
             response["warnings"] = warnings
+        if anomalies:
+            response["anomalies"] = anomalies
         if warning_msg:
             response["warning"] = warning_msg
         return jsonify(response)
