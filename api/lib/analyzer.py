@@ -50,6 +50,37 @@ DISCOUNT_KWS = ('diskon', 'potongan harga', 'harga khusus')
 PRUNE_KWS = ('pangkas', 'hapus', 'kurangi menu', 'evaluasi menu', 'menata ulang', 'kurangi biaya', 'potong menu')
 GROWTH_KWS = ('tingkatkan', 'kembangkan', 'pertahankan', 'pertumbuhan', 'pelanggan', 'kunjungan', 'promosi', 'loyalitas', 'naikkan pendapatan', 'pelanggan lama')
 
+MODEL_CONTEXT_WINDOW = {
+    "llama-3.3-70b-versatile": 131072,
+    "llama-3.1-8b-instant": 131072,
+    "deepseek-r1-distill-llama-70b": 131072,
+    "qwen-qwq-32b": 131072,
+    "meta-llama/llama-4-maverick-17b-128e-instruct": 131072,
+    "meta-llama/llama-4-scout-17b-16e-instruct": 131072,
+    "openai/gpt-oss-120b": 131072,
+    "mixtral-8x7b-32768": 32768,
+    "llama3-70b-8192": 8192,
+    "llama3-8b-8192": 8192,
+    "gemma2-9b-it": 8192,
+}
+
+PREFERRED_MODELS = [
+    "llama-3.3-70b-versatile",
+    "llama-3.1-8b-instant",
+    "deepseek-r1-distill-llama-70b",
+    "qwen-qwq-32b",
+    "meta-llama/llama-4-maverick-17b-128e-instruct",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "openai/gpt-oss-120b",
+    "mixtral-8x7b-32768",
+    "llama3-70b-8192",
+    "llama3-8b-8192",
+    "gemma2-9b-it",
+]
+
+MAX_PROMPT_CHARS = 12000
+MAX_COMPLETION_TOKENS = 1500
+
 
 def _fmt(n):
     if n is None:
@@ -355,28 +386,25 @@ def _get_available_models(client):
         models_response = client.models.list()
         available_ids = [m.id for m in models_response.data]
     except Exception:
-        return ["llama-3.1-8b-instant", "llama3-70b-8192"]
+        return PREFERRED_MODELS
 
-    preferred_order = [
-        "llama-3.1-8b-instant",
-        "llama3-70b-8192",
-        "llama-3.3-70b-versatile"
-    ]
+    valid = []
+    for mid in PREFERRED_MODELS:
+        if mid in available_ids:
+            valid.append(mid)
 
-    valid_models = []
-    for pm in preferred_order:
-        if pm in available_ids:
-            valid_models.append(pm)
-
-    if not valid_models:
+    if not valid:
         for mid in available_ids:
-            if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus', 'qwen', 'gpt-oss']):
-                valid_models.append(mid)
+            low = mid.lower()
+            if any(x in low for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus']):
+                continue
+            valid.append(mid)
+        valid.sort(key=lambda m: MODEL_CONTEXT_WINDOW.get(m, 8192), reverse=True)
 
-    if not valid_models:
-        valid_models = ["llama-3.1-8b-instant"]
+    if not valid:
+        valid = PREFERRED_MODELS
 
-    return valid_models
+    return valid
 
 
 def _extract_json(text):
@@ -394,33 +422,53 @@ def _extract_json(text):
     return None
 
 
-def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
-                      bep_info, situation, situation_label, hist_text, learning_ctx,
-                      yctx=None, anomalies=None):
-    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+def _estimate_tokens(text):
+    return len(text) // 3.5
 
+
+def _trim_prompt(prompt, max_chars):
+    if len(prompt) <= max_chars:
+        return prompt
+    return prompt[:max_chars] + '\n... (prompt dipotong karena batas konteks)'
+
+
+def _is_context_overflow(err):
+    s = str(err).lower()
+    return (
+        'context_length_exceeded' in s
+        or 'reduce the length' in s
+        or 'maximum context length' in s
+        or 'context window' in s
+    )
+
+
+def _build_prompt(fin, classification, tanggal_panjang, bep_info, situation_label,
+                  hist_text, learning_ctx, yctx, anomalies):
     menu_lines = []
-    top_menus = sorted([x for x in fin['per_menu'] if x['margin'] is not None], key=lambda x: x['margin'], reverse=True)[:15]
+    top_menus = sorted(
+        [x for x in fin['per_menu'] if x['margin'] is not None],
+        key=lambda x: x['margin'], reverse=True
+    )[:10]
 
     for p in top_menus:
         up = p.get('unit_price') or 0
         mp = p.get('master_price')
         mp_str = _fmt(mp) if mp else '-'
         menu_lines.append(
-            f"- {p['product']}: qty={p['qty']}, harga_jual={_fmt(up)}, "
-            f"acuan={mp_str}, total_pendapatan={_fmt(p['revenue'])}, laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
+            f"- {p['product']}: qty={p['qty']}, harga={_fmt(up)}, "
+            f"acuan={mp_str}, laba={_fmt(p['margin'])} ({p['margin_pct']:.1f}%)"
         )
 
     cls_lines = []
     for cat, items in classification.items():
         if not items:
             continue
-        names = ', '.join(f"{i['product']} (qty {i['qty']})" for i in items[:5])
+        names = ', '.join(f"{i['product']}({i['qty']})" for i in items[:3])
         cls_lines.append(f"- {cat}: {names}")
 
     exp_lines = []
     for cat, data in fin['expense_breakdown'].items():
-        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:3])
+        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:2])
         exp_lines.append(f"- {cat} ({_fmt(data['total'])}): {items_str}")
 
     status_cash = "NEGATIF" if fin['cash_flow'] < 0 else "POSITIF"
@@ -430,10 +478,10 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
     anomaly_lines = _build_anomaly_lines(fin)
     math_facts = _build_math_facts(fin)
 
-    hist_text_short = _truncate(hist_text, 800)
-    learning_text_short = _truncate(format_learning_for_prompt(learning_ctx), 800)
-
+    hist_text_short = _truncate(hist_text, 500)
+    learning_text_short = _truncate(format_learning_for_prompt(learning_ctx), 500)
     yctx_text = (yctx or {}).get('text') or '(belum ada laporan sebelumnya)'
+    yctx_text = _truncate(yctx_text, 900)
     anomaly_signals = anomalies or []
 
     prompt = f"""
@@ -453,10 +501,10 @@ PERBANDINGAN DENGAN LAPORAN SEBELUMNYA:
 {yctx_text}
 
 SINYAL OPERASIONAL (WAJIB DIBAHAS DI DIAGNOSIS JIKA ADA):
-{chr(10).join('- ' + a for a in anomaly_signals) if anomaly_signals else '- tidak ada'}
+{chr(10).join('- ' + a for a in anomaly_signals[:5]) if anomaly_signals else '- tidak ada'}
 
 ANOMALI TEKNIS (cek input kasir):
-{chr(10).join(anomaly_lines) if anomaly_lines else '- tidak ada'}
+{chr(10).join(anomaly_lines[:5]) if anomaly_lines else '- tidak ada'}
 
 TOTAL UANG KELUAR HARI INI:
 - Total: {_fmt(bep_info['bep'])}
@@ -465,13 +513,13 @@ TOTAL UANG KELUAR HARI INI:
 SITUASI: {situation_label}
 RASIO MINUMAN: {attach_rate_pct:.1f}% (Gunakan angka persis ini jika menyebut rasio).
 
-DETAIL MENU (Top 15):
+DETAIL MENU (Top 10):
 {chr(10).join(menu_lines) if menu_lines else '- tidak ada data'}
 
 KLASIFIKASI MENU:
 {chr(10).join(cls_lines) if cls_lines else '- tidak ada'}
 
-RINCIAN PENGELUARAN (Top 3 per Kategori):
+RINCIAN PENGELUARAN (Top 2 per Kategori):
 {chr(10).join(exp_lines) if exp_lines else '- tidak ada'}
 
 HISTORIS:
@@ -513,30 +561,41 @@ ATURAN TAMBAHAN (FATAL):
 - Saat menulis "X melampaui Y", pastikan X > Y. Saat menulis "X di bawah Y", pastikan X < Y.
 """
 
-    available_models = _get_available_models(client)
-    data = None
+    return _trim_prompt(prompt.strip(), MAX_PROMPT_CHARS)
+
+
+def _call_groq(client, prompt):
+    models = _get_available_models(client)
     last_error = None
 
-    for model_name in available_models:
+    for model_name in models:
+        ctx = MODEL_CONTEXT_WINDOW.get(model_name, 8192)
+        if ctx <= 8192:
+            budget = 6000
+        elif ctx <= 32768:
+            budget = 10000
+        else:
+            budget = MAX_PROMPT_CHARS
+
+        current_prompt = _trim_prompt(prompt, budget)
+
         for attempt in range(2):
             try:
                 resp = client.chat.completions.create(
                     model=model_name,
                     messages=[
                         {"role": "system", "content": SYSTEM_PROMPT},
-                        {"role": "user", "content": prompt},
+                        {"role": "user", "content": current_prompt},
                     ],
                     temperature=0.2,
-                    max_tokens=2048,
+                    max_tokens=MAX_COMPLETION_TOKENS,
                 )
                 raw_text = resp.choices[0].message.content
-                parsed_data = _extract_json(raw_text)
-                if parsed_data:
-                    data = parsed_data
-                    break
-                else:
-                    last_error = Exception("Gagal parse JSON")
-                    break
+                parsed = _extract_json(raw_text)
+                if parsed:
+                    return parsed
+                last_error = Exception("Gagal parse JSON")
+                break
             except RateLimitError as e:
                 if attempt == 0:
                     time.sleep(5)
@@ -544,13 +603,48 @@ ATURAN TAMBAHAN (FATAL):
                 last_error = e
                 break
             except Exception as e:
+                if _is_context_overflow(e):
+                    current_prompt = _trim_prompt(prompt, max(2000, budget // 2))
+                    last_error = e
+                    continue
                 last_error = e
                 break
-        if data:
-            break
 
-    if data is None:
-        raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
+    raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
+
+
+def _fallback_analysis(fin, situation, bep_info):
+    headline = (
+        f"Pendapatan hari ini {_fmt(fin['revenue'])} "
+        f"{'di bawah' if bep_info['gap'] < 0 else 'di atas'} "
+        f"Total Uang Keluar {_fmt(bep_info['bep'])} "
+        f"(kas bersih {_fmt(bep_info['gap'])})."
+    )
+    diagnosis = _fallback_strategi(fin, situation, bep_info)
+    return {
+        'kondisi': 'Rugi' if fin['cash_flow'] < 0 else 'Untung',
+        'headline': headline,
+        'diagnosis': diagnosis,
+        'instruksi': _fallback_actions(fin, situation, bep_info),
+        'strategi': _fallback_strategi(fin, situation, bep_info),
+    }
+
+
+def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
+                      bep_info, situation, situation_label, hist_text, learning_ctx,
+                      yctx=None, anomalies=None):
+    client = Groq(api_key=os.environ["GROQ_API_KEY"])
+
+    prompt = _build_prompt(
+        fin, classification, tanggal_panjang, bep_info, situation_label,
+        hist_text, learning_ctx, yctx, anomalies,
+    )
+
+    try:
+        data = _call_groq(client, prompt)
+    except Exception as e:
+        print(f"[analyzer] Semua model gagal: {e}", flush=True)
+        data = _fallback_analysis(fin, situation, bep_info)
 
     for key in ('headline', 'diagnosis', 'strategi'):
         if data.get(key):
