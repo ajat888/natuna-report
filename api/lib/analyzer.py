@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import time
 
 from groq import Groq, RateLimitError
 
@@ -68,6 +69,12 @@ def _norm_text(text):
 def _has_any(text, keywords):
     t = (text or '').lower()
     return any(k in t for k in keywords)
+
+
+def _truncate(text, max_chars):
+    if not text:
+        return '-'
+    return text[:max_chars] + '\n... (dipotong untuk hemat token)' if len(text) > max_chars else text
 
 
 def _menu_mentions(text, extra_per_menu=None):
@@ -269,12 +276,12 @@ def _get_available_models(client):
         models_response = client.models.list()
         available_ids = [m.id for m in models_response.data]
     except Exception:
-        return ["llama-3.3-70b-versatile", "llama3-70b-8192", "llama-3.1-8b-instant"]
+        return ["llama-3.1-8b-instant", "llama3-70b-8192"]
 
-    # HANYA MENGGUNAKAN MODEL DENGAN LIMIT TPM TINGGI
     preferred_order = [
-        "llama-3.3-70b-versatile",
-        "llama3-70b-8192"
+        "llama-3.1-8b-instant",
+        "llama3-70b-8192",
+        "llama-3.3-70b-versatile"
     ]
 
     valid_models = []
@@ -283,13 +290,12 @@ def _get_available_models(client):
             valid_models.append(pm)
 
     if not valid_models:
-        # Jika model di atas tidak tersedia, ambil model apapun kecuali model limit kecil
         for mid in available_ids:
-            if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus', '8b', '20b']):
+            if not any(x in mid.lower() for x in ['whisper', 'tts', 'guard', 'playai', 'orpheus', 'qwen', 'gpt-oss']):
                 valid_models.append(mid)
                 
     if not valid_models:
-        valid_models = ["llama-3.3-70b-versatile"]
+        valid_models = ["llama-3.1-8b-instant"]
 
     return valid_models
 
@@ -314,8 +320,9 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
     client = Groq(api_key=os.environ["GROQ_API_KEY"])
 
     menu_lines = []
-    # 100% DATA UTUH: Mengambil semua menu tanpa dipotong
-    for p in sorted([x for x in fin['per_menu'] if x['margin'] is not None], key=lambda x: x['margin'], reverse=True):
+    top_menus = sorted([x for x in fin['per_menu'] if x['margin'] is not None], key=lambda x: x['margin'], reverse=True)[:15]
+    
+    for p in top_menus:
         up = p.get('unit_price') or 0
         mp = p.get('master_price')
         mp_str = _fmt(mp) if mp else '-'
@@ -328,14 +335,12 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
     for cat, items in classification.items():
         if not items:
             continue
-        # 100% DATA UTUH: Mengambil semua item klasifikasi
-        names = ', '.join(f"{i['product']} (qty {i['qty']})" for i in items)
+        names = ', '.join(f"{i['product']} (qty {i['qty']})" for i in items[:5])
         cls_lines.append(f"- {cat}: {names}")
 
     exp_lines = []
     for cat, data in fin['expense_breakdown'].items():
-        # 100% DATA UTUH: Mengambil semua item pengeluaran
-        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'])
+        items_str = ', '.join(f"{i['sub']}={_fmt(i['amount'])}" for i in data['items'][:3])
         exp_lines.append(f"- {cat} ({_fmt(data['total'])}): {items_str}")
 
     status_cash = "NEGATIF" if fin['cash_flow'] < 0 else "POSITIF"
@@ -344,6 +349,9 @@ def generate_analysis(fin, classification, tanggal_panjang, tanggal_iso,
 
     anomaly_lines = _build_anomaly_lines(fin)
     math_facts = _build_math_facts(fin)
+    
+    hist_text_short = _truncate(hist_text, 800)
+    learning_text_short = _truncate(format_learning_for_prompt(learning_ctx), 800)
 
     prompt = f"""
 Laporan harian Natuna Café & Resto untuk {tanggal_panjang}.
@@ -368,20 +376,20 @@ TITIK IMPAS KAS:
 SITUASI: {situation_label}
 RASIO MINUMAN: {attach_rate_pct:.1f}% (Gunakan angka persis ini jika menyebut rasio).
 
-DETAIL SELURUH MENU TERJUAL (Tanpa Dipotong):
+DETAIL MENU (Top 15):
 {chr(10).join(menu_lines) if menu_lines else '- tidak ada data'}
 
-KLASIFIKASI SELURUH MENU:
+KLASIFIKASI MENU:
 {chr(10).join(cls_lines) if cls_lines else '- tidak ada'}
 
-RINCIAN SELURUH PENGELUARAN (Tanpa Dipotong):
+RINCIAN PENGELUARAN (Top 3 per Kategori):
 {chr(10).join(exp_lines) if exp_lines else '- tidak ada'}
 
 HISTORIS:
-{hist_text}
+{hist_text_short}
 
 POLA PEMBELAJARAN:
-{format_learning_for_prompt(learning_ctx)}
+{learning_text_short}
 
 TUGAS:
 Hasilkan JSON PERSIS (Bahasa Indonesia, tanpa kata Inggris):
@@ -420,30 +428,36 @@ ATURAN TAMBAHAN (FATAL):
     last_error = None
 
     for model_name in available_models:
-        try:
-            resp = client.chat.completions.create(
-                model=model_name,
-                messages=[
-                    {"role": "system", "content": SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.2,
-                max_tokens=3000,
-            )
-            raw_text = resp.choices[0].message.content
-            parsed_data = _extract_json(raw_text)
-            if parsed_data:
-                data = parsed_data
+        for attempt in range(2):
+            try:
+                resp = client.chat.completions.create(
+                    model=model_name,
+                    messages=[
+                        {"role": "system", "content": SYSTEM_PROMPT},
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=0.2,
+                    max_tokens=2048,
+                )
+                raw_text = resp.choices[0].message.content
+                parsed_data = _extract_json(raw_text)
+                if parsed_data:
+                    data = parsed_data
+                    break
+                else:
+                    last_error = Exception("Gagal parse JSON")
+                    break
+            except RateLimitError as e:
+                if attempt == 0:
+                    time.sleep(5)
+                    continue
+                last_error = e
                 break
-            else:
-                last_error = Exception("Gagal parse JSON")
-                continue
-        except RateLimitError as e:
-            last_error = e
-            continue
-        except Exception as e:
-            last_error = e
-            continue
+            except Exception as e:
+                last_error = e
+                break
+        if data:
+            break
 
     if data is None:
         raise Exception(f"Semua model AI gagal. Error terakhir: {last_error}")
