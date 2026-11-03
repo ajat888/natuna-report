@@ -60,12 +60,17 @@ def calculate_financials(sales_items, menu_list, expenses_breakdown, expenses_to
         else:
             unmatched.append(s['product'])
 
+        unit_price = int(round(s['revenue'] / s['qty'])) if s['qty'] > 0 else 0
+        master_price = m['price'] if m else None
+
         per_menu.append({
             'product': s['product'],
             'matched_name': m['full_name'] if m else None,
             'category': m['category'] if m else 'Tidak diketahui',
             'qty': s['qty'],
             'revenue': s['revenue'],
+            'unit_price': unit_price,
+            'master_price': master_price,
             'hpp_unit': hpp_unit,
             'cogs': cogs,
             'margin': margin,
